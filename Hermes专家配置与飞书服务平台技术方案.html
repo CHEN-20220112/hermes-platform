@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes 专家配置与飞书服务平台 · 技术方案 v3</title>
+<style>
+  :root{
+    --bg:#F6F7F9; --card:#FFFFFF; --ink:#1F2329; --sub:#5F6B7A; --line:#E5E8EC;
+    --brand:#2F6FED; --brand-soft:#EAF1FE; --ok:#1FA35C; --warn:#D9822B; --err:#D9453C;
+    --teal:#0E8A83; --teal-soft:#E4F6F4; --violet:#6B4FD8; --violet-soft:#EFEBFB;
+    --amber-soft:#FDF3E2; --red-soft:#FCEBEA;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:var(--bg); color:var(--ink); font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,Roboto,sans-serif; line-height:1.7; font-size:15px;}
+  .wrap{max-width:1040px; margin:0 auto; padding:24px 20px 80px;}
+
+  header.hero{background:linear-gradient(135deg,#2F6FED 0%,#0E8A83 100%); color:#fff; border-radius:18px; padding:34px 34px 30px; margin-bottom:28px;}
+  header.hero h1{font-size:26px; font-weight:700; letter-spacing:.5px;}
+  header.hero .sub{margin-top:8px; font-size:14px; opacity:.93;}
+  header.hero .meta{margin-top:16px; display:flex; flex-wrap:wrap; gap:10px;}
+  header.hero .meta span{background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.25); padding:4px 12px; border-radius:999px; font-size:12.5px;}
+
+  nav.toc{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 22px; margin-bottom:28px;}
+  nav.toc b{font-size:13px; color:var(--sub); display:block; margin-bottom:8px; letter-spacing:1px;}
+  nav.toc ol{list-style:none; display:flex; flex-wrap:wrap; gap:6px 10px;}
+  nav.toc a{font-size:13px; color:var(--brand); text-decoration:none; background:var(--brand-soft); padding:3px 10px; border-radius:8px;}
+  nav.toc a:hover{background:#DCE7FC;}
+
+  section{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:26px 28px; margin-bottom:24px;}
+  section h2{font-size:19px; font-weight:700; margin-bottom:6px; display:flex; align-items:center; gap:10px;}
+  section h2 .no{flex:none; width:28px; height:28px; border-radius:8px; background:var(--brand); color:#fff; font-size:14px; display:inline-flex; align-items:center; justify-content:center;}
+  section h3{font-size:15.5px; font-weight:600; margin:18px 0 8px; color:#2C3440;}
+  section p{color:#3A4452; margin:8px 0;}
+  .lead{font-size:14.5px; color:#4A5562;}
+  .callout{border-left:4px solid var(--brand); background:var(--brand-soft); border-radius:0 10px 10px 0; padding:12px 16px; margin:14px 0; font-size:14px;}
+  .callout.teal{border-left-color:var(--teal); background:var(--teal-soft);}
+  .callout.amber{border-left-color:var(--warn); background:var(--amber-soft);}
+  .callout.red{border-left-color:var(--err); background:var(--red-soft);}
+  .callout b{color:inherit;}
+  ul,ol{margin:8px 0 8px 22px; color:#3A4452;}
+  li{margin:4px 0;}
+  code{background:#F0F2F5; border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-family:Consolas,monospace; font-size:12.5px; color:#2F6FED;}
+  pre{background:#1E2530; color:#E6EAF0; border-radius:10px; padding:14px 16px; overflow-x:auto; font-size:12.5px; line-height:1.6; margin:10px 0; font-family:Consolas,monospace;}
+  pre .c{color:#7C8AA0;}
+
+  table{width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px;}
+  th{background:#F2F5FA; color:#2C3440; text-align:left; padding:9px 12px; border:1px solid var(--line); font-weight:600;}
+  td{padding:9px 12px; border:1px solid var(--line); color:#3A4452; vertical-align:top;}
+  tr:nth-child(even) td{background:#FAFBFD;}
+  .tag{display:inline-block; font-size:11.5px; padding:1px 8px; border-radius:999px; font-weight:500;}
+  .tag.blue{background:var(--brand-soft); color:var(--brand);}
+  .tag.green{background:#E5F6EC; color:var(--ok);}
+  .tag.amber{background:var(--amber-soft); color:var(--warn);}
+  .tag.red{background:var(--red-soft); color:var(--err);}
+  .tag.violet{background:var(--violet-soft); color:var(--violet);}
+  .tag.teal{background:var(--teal-soft); color:var(--teal);}
+
+  .flow{background:#FBFCFE; border:1px solid var(--line); border-radius:12px; padding:20px; margin:14px 0; overflow-x:auto;}
+  .flow svg{width:100%; max-width:940px; height:auto; display:block; margin:0 auto;}
+  .legend{display:flex; flex-wrap:wrap; gap:16px; font-size:12px; color:var(--sub); margin-top:10px;}
+  .legend i{display:inline-block; width:14px; height:14px; border-radius:4px; margin-right:5px; vertical-align:-2px;}
+
+  .seq{background:#FBFCFE; border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:14px 0; overflow-x:auto; font-size:13px;}
+  .seq pre{margin:0;}
+
+  .cards{display:flex; flex-wrap:wrap; gap:14px; margin:14px 0;}
+  .cards .c{flex:1 1 220px; min-width:0; border:1px solid var(--line); border-radius:12px; padding:14px 16px; background:#fff;}
+  .cards .c b{font-size:14px; display:block; margin-bottom:4px;}
+  .cards .c span{font-size:12.5px; color:var(--sub);}
+
+  .road{display:flex; flex-direction:column; gap:0; margin:14px 0;}
+  .road .step{display:flex; gap:14px; position:relative; padding-bottom:16px;}
+  .road .step:last-child{padding-bottom:0;}
+  .road .dot{flex:none; width:34px; height:34px; border-radius:50%; background:var(--brand-soft); color:var(--brand); font-weight:700; font-size:13px; display:flex; align-items:center; justify-content:center; border:2px solid var(--brand);}
+  .road .step .line{position:absolute; left:16px; top:34px; bottom:0; width:2px; background:var(--line);}
+  .road .step:last-child .line{display:none;}
+  .road .body{flex:1; padding-top:2px;}
+  .road .body b{font-size:14.5px;}
+  .road .body .dur{font-size:12px; color:var(--warn); margin-left:6px; font-weight:500;}
+
+  footer{text-align:center; color:#98A2B3; font-size:12.5px; margin-top:8px;}
+  @media(max-width:640px){
+    .wrap{padding:14px 12px 60px;}
+    header.hero{padding:24px 20px;}
+    header.hero h1{font-size:21px;}
+    section{padding:20px 16px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>Hermes 专家配置与飞书服务平台 · 技术方案</h1>
+  <div class="sub">管理员登录平台配置「专家模型」（系统提示词 + Skill + MCP 工具 + 模型）→ 下发到对应 Hermes agent → 飞书用户选择专家完成任务；<b>平台只做配置与路由，执行完全由 Hermes agent 承担</b></div>
+  <div class="meta">
+    <span>仅管理员登录</span>
+    <span>专家模型配置中心</span>
+    <span>Skill / MCP 工具绑定</span>
+    <span>飞书选择专家 · Hermes 执行</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <b>目录</b>
+  <ol>
+    <li><a href="#s1">需求与定位</a></li>
+    <li><a href="#s2">总体架构</a></li>
+    <li><a href="#s3">角色与权限</a></li>
+    <li><a href="#s4">专家模型配置（核心）</a></li>
+    <li><a href="#s5">Skill 配置管理</a></li>
+    <li><a href="#s6">MCP 工具配置管理</a></li>
+    <li><a href="#s7">飞书接入与专家选择</a></li>
+    <li><a href="#s8">两条链路：配置流 & 运行时流</a></li>
+    <li><a href="#s9">数据模型</a></li>
+    <li><a href="#s10">技术选型</a></li>
+    <li><a href="#s11">实施路线</a></li>
+    <li><a href="#s12">风险与决策</a></li>
+  </ol>
+</nav>
+
+<!-- ============ 1 ============ -->
+<section id="s1">
+  <h2><span class="no">1</span>需求与定位</h2>
+  <p class="lead">需求要点（按你最新描述归纳）：</p>
+  <div class="callout teal">
+    <b>① 仅管理员登录。</b>平台不面向普通用户，只有一个（或少量）管理员账号，负责全部配置。
+  </div>
+  <div class="callout teal">
+    <b>② 管理员配置"专家模型"。</b>每个专家 = 不同的<b>系统提示词</b> + 不同的 <b>Skill</b> + 不同的 <b>MCP 工具</b>（+ 模型选择），一个专家就是一套"人设 + 能力"的组合。
+  </div>
+  <div class="callout teal">
+    <b>③ 接入飞书。</b>平台把配置好的专家通过飞书开放给终端用户。
+  </div>
+  <div class="callout amber">
+    <b>④ 飞书用户选择专家。</b>飞书用户（无平台账号）在飞书中"选择不同的专家模型"来完成特定任务，例如选"数据分析专家"做报表、选"法务专家"审合同。
+  </div>
+  <div class="callout red">
+    <b>⑤ 平台只配置，执行靠 Hermes。</b>平台本身不做推理、不跑 Agent 逻辑；真正的执行是 <b>Hermes agent</b>（加载管理员配置的系统提示词/Skill/MCP，调用底层大模型）。平台只负责"把配置交给 Hermes"和"把飞书请求路由到对应 Hermes"。
+  </div>
+  <h3>1.1 一句话定位</h3>
+  <p><b>平台 = 管理员的"专家配置中心" + 飞书侧的"专家路由网关"；Hermes = 唯一的执行引擎。</b>配置一次，飞书用户随时按需选择专家干活。</p>
+  <table>
+    <tr><th>角色</th><th>是否登录平台</th><th>做什么</th></tr>
+    <tr><td>管理员</td><td><span class="tag blue">是（唯一）</span></td><td>配置专家（系统提示词/Skill/MCP/模型）、管理 Skill/MCP 仓库、接入飞书、查看审计</td></tr>
+    <tr><td>专家（Expert）</td><td>否（配置单元）</td><td>被配置、被飞书用户选择；对应一个 Hermes agent</td></tr>
+    <tr><td>飞书用户</td><td>否</td><td>在飞书里选择专家，下达任务，接收结果</td></tr>
+    <tr><td>Hermes agent</td><td>否（执行引擎）</td><td>加载配置、跑 Agent 循环、调用模型与工具，产出结果</td></tr>
+  </table>
+</section>
+
+<!-- ============ 2 ============ -->
+<section id="s2">
+  <h2><span class="no">2</span>总体架构</h2>
+  <p class="lead">三层：<b>管理面（管理员后台）→ 路由面（飞书接入 + 专家路由）→ 执行面（Hermes agent 池）</b>。平台承载管理面与路由面，执行面完全交给 Hermes。</p>
+  <div class="flow">
+    <svg viewBox="0 0 940 560" xmlns="http://www.w3.org/2000/svg" font-family="PingFang SC,Microsoft YaHei,sans-serif">
+      <!-- 管理面 -->
+      <rect x="0" y="0" width="940" height="128" rx="12" fill="#EFEBFB"/>
+      <text x="18" y="26" font-size="14" font-weight="700" fill="#6B4FD8">管理面 · 管理员后台（仅管理员登录）</text>
+      <rect x="18" y="38" width="220" height="78" rx="9" fill="#FFFFFF" stroke="#6B4FD8" stroke-width="1.4"/>
+      <text x="34" y="60" font-size="12.5" font-weight="700" fill="#2C3440">专家配置</text>
+      <text x="34" y="78" font-size="11" fill="#5F6B7A">系统提示词 · 模型</text>
+      <text x="34" y="93" font-size="11" fill="#5F6B7A">Skill 绑定 · MCP 绑定</text>
+      <text x="34" y="108" font-size="11" fill="#5F6B7A">启停 · 飞书可见性</text>
+      <rect x="252" y="38" width="220" height="78" rx="9" fill="#FFFFFF" stroke="#6B4FD8" stroke-width="1.4"/>
+      <text x="268" y="60" font-size="12.5" font-weight="700" fill="#2C3440">Skill 管理</text>
+      <text x="268" y="78" font-size="11" fill="#5F6B7A">中央仓库 · 版本</text>
+      <text x="268" y="93" font-size="11" fill="#5F6B7A">编写/上传 · 绑定专家</text>
+      <text x="268" y="108" font-size="11" fill="#5F6B7A">变更即生效</text>
+      <rect x="486" y="38" width="220" height="78" rx="9" fill="#FFFFFF" stroke="#6B4FD8" stroke-width="1.4"/>
+      <text x="502" y="60" font-size="12.5" font-weight="700" fill="#2C3440">MCP 管理</text>
+      <text x="502" y="78" font-size="11" fill="#5F6B7A">Server 注册 · Secret Vault</text>
+      <text x="502" y="93" font-size="11" fill="#5F6B7A">工具过滤 · 绑定专家</text>
+      <text x="502" y="108" font-size="11" fill="#5F6B7A">连通性检查</text>
+      <rect x="720" y="38" width="202" height="78" rx="9" fill="#FFFFFF" stroke="#6B4FD8" stroke-width="1.4"/>
+      <text x="736" y="60" font-size="12.5" font-weight="700" fill="#2C3440">接入与审计</text>
+      <text x="736" y="78" font-size="11" fill="#5F6B7A">飞书 App 配置</text>
+      <text x="736" y="93" font-size="11" fill="#5F6B7A">专家可见性</text>
+      <text x="736" y="108" font-size="11" fill="#5F6B7A">调用审计/用量</text>
+      <!-- 路由面 -->
+      <rect x="0" y="152" width="940" height="132" rx="12" fill="#FDF3E2"/>
+      <text x="18" y="178" font-size="14" font-weight="700" fill="#D9822B">路由面 · 飞书接入 + 专家路由（平台）</text>
+      <rect x="18" y="190" width="290" height="80" rx="9" fill="#FFFFFF" stroke="#D9822B" stroke-width="1.4"/>
+      <text x="34" y="212" font-size="12.5" font-weight="700" fill="#2C3440">飞书适配器</text>
+      <text x="34" y="232" font-size="11" fill="#5F6B7A">Webhook / WebSocket 长连接</text>
+      <text x="34" y="248" font-size="11" fill="#5F6B7A">文本·图片·文件·卡片回调</text>
+      <text x="34" y="264" font-size="11" fill="#5F6B7A">私聊 / 群聊 @</text>
+      <rect x="326" y="190" width="290" height="80" rx="9" fill="#FFFFFF" stroke="#D9822B" stroke-width="1.4"/>
+      <text x="342" y="212" font-size="12.5" font-weight="700" fill="#2C3440">专家选择器</text>
+      <text x="342" y="232" font-size="11" fill="#5F6B7A">交互卡片列出可用专家</text>
+      <text x="342" y="248" font-size="11" fill="#5F6B7A">指令路由（@机器人 选专家）</text>
+      <text x="342" y="264" font-size="11" fill="#5F6B7A">会话按 专家+用户 隔离</text>
+      <rect x="634" y="190" width="288" height="80" rx="9" fill="#FFFFFF" stroke="#D9822B" stroke-width="1.4"/>
+      <text x="650" y="212" font-size="12.5" font-weight="700" fill="#2C3440">执行网关 / 路由</text>
+      <text x="650" y="232" font-size="11" fill="#5F6B7A">飞书用户请求 → 路由到</text>
+      <text x="650" y="248" font-size="11" fill="#5F6B7A">对应专家的 Hermes agent</text>
+      <text x="650" y="264" font-size="11" fill="#5F6B7A">流式回传 · 审计入库</text>
+      <!-- 执行面 -->
+      <rect x="0" y="308" width="940" height="170" rx="12" fill="#E5F6EC"/>
+      <text x="18" y="334" font-size="14" font-weight="700" fill="#1FA35C">执行面 · Hermes agent 池（真实执行引擎，平台不执行）</text>
+      <rect x="18" y="346" width="220" height="120" rx="9" fill="#FFFFFF" stroke="#1FA35C" stroke-width="1.4"/>
+      <text x="34" y="368" font-size="12.5" font-weight="700" fill="#2C3440">专家A = Profile A</text>
+      <text x="34" y="386" font-size="11" fill="#5F6B7A">SOUL.md ← 系统提示词</text>
+      <text x="34" y="402" font-size="11" fill="#5F6B7A">skills/ ← 绑定的 Skill</text>
+      <text x="34" y="418" font-size="11" fill="#5F6B7A">config.yaml ← MCP/模型</text>
+      <text x="34" y="434" font-size="11" fill="#5F6B7A">API Server / CLI</text>
+      <text x="34" y="450" font-size="11" fill="#5F6B7A">→ 底层 LLM</text>
+      <rect x="252" y="346" width="220" height="120" rx="9" fill="#FFFFFF" stroke="#1FA35C" stroke-width="1.4"/>
+      <text x="268" y="368" font-size="12.5" font-weight="700" fill="#2C3440">专家B = Profile B</text>
+      <text x="268" y="386" font-size="11" fill="#5F6B7A">SOUL.md ← 系统提示词</text>
+      <text x="268" y="402" font-size="11" fill="#5F6B7A">skills/ ← 绑定的 Skill</text>
+      <text x="268" y="418" font-size="11" fill="#5F6B7A">config.yaml ← MCP/模型</text>
+      <text x="268" y="434" font-size="11" fill="#5F6B7A">API Server / CLI</text>
+      <text x="268" y="450" font-size="11" fill="#5F6B7A">→ 底层 LLM</text>
+      <rect x="486" y="346" width="220" height="120" rx="9" fill="#FFFFFF" stroke="#1FA35C" stroke-width="1.4"/>
+      <text x="502" y="368" font-size="12.5" font-weight="700" fill="#2C3440">专家C = Profile C</text>
+      <text x="502" y="386" font-size="11" fill="#5F6B7A">SOUL.md ← 系统提示词</text>
+      <text x="502" y="402" font-size="11" fill="#5F6B7A">skills/ ← 绑定的 Skill</text>
+      <text x="502" y="418" font-size="11" fill="#5F6B7A">config.yaml ← MCP/模型</text>
+      <text x="502" y="434" font-size="11" fill="#5F6B7A">API Server / CLI</text>
+      <text x="502" y="450" font-size="11" fill="#5F6B7A">→ 底层 LLM</text>
+      <rect x="720" y="346" width="202" height="120" rx="9" fill="#FFFFFF" stroke="#1FA35C" stroke-width="1.4" stroke-dasharray="4 3"/>
+      <text x="736" y="368" font-size="12.5" font-weight="700" fill="#2C3440">专家 … (扩展)</text>
+      <text x="736" y="386" font-size="11" fill="#5F6B7A">每专家一个 Profile</text>
+      <text x="736" y="402" font-size="11" fill="#5F6B7A">容器/服务托管</text>
+      <text x="736" y="418" font-size="11" fill="#5F6B7A">互相隔离</text>
+      <text x="736" y="434" font-size="11" fill="#5F6B7A">独立启停</text>
+      <text x="736" y="450" font-size="11" fill="#5F6B7A">→ 底层 LLM</text>
+      <!-- 数据层 -->
+      <rect x="0" y="500" width="940" height="58" rx="12" fill="#F2F5FA"/>
+      <text x="18" y="524" font-size="14" font-weight="700" fill="#5F6B7A">数据层</text>
+      <rect x="18" y="532" width="215" height="20" rx="6" fill="#FFFFFF" stroke="#C9D2DE"/>
+      <text x="30" y="547" font-size="12" fill="#2C3440">PostgreSQL · 专家/配置</text>
+      <rect x="248" y="532" width="215" height="20" rx="6" fill="#FFFFFF" stroke="#C9D2DE"/>
+      <text x="260" y="547" font-size="12" fill="#2C3440">Redis · 会话/去重</text>
+      <rect x="478" y="532" width="215" height="20" rx="6" fill="#FFFFFF" stroke="#C9D2DE"/>
+      <text x="490" y="547" font-size="12" fill="#2C3440">Kafka · 事件/审计</text>
+      <rect x="708" y="532" width="214" height="20" rx="6" fill="#FFFFFF" stroke="#C9D2DE"/>
+      <text x="724" y="547" font-size="12" fill="#2C3440">对象存储 · Skill/产物</text>
+      <!-- arrows -->
+      <defs><marker id="arr3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#9AA5B1"/></marker></defs>
+      <line x1="470" y1="140" x2="470" y2="188" stroke="#9AA5B1" stroke-width="1.6" marker-end="url(#arr3)"/>
+      <line x1="470" y1="284" x2="470" y2="344" stroke="#9AA5B1" stroke-width="1.6" marker-end="url(#arr3)"/>
+      <line x1="470" y1="466" x2="470" y2="500" stroke="#9AA5B1" stroke-width="1.6" marker-end="url(#arr3)"/>
+    </svg>
+    <div class="legend">
+      <span><i style="background:#EFEBFB"></i>管理面（管理员后台）</span>
+      <span><i style="background:#FDF3E2"></i>路由面（飞书+路由）</span>
+      <span><i style="background:#E5F6EC"></i>执行面（Hermes）</span>
+      <span><i style="background:#F2F5FA"></i>数据层</span>
+    </div>
+  </div>
+  <div class="callout red">
+    <b>职责边界（重要）：</b>平台<b>不跑模型、不跑 Agent 循环</b>。管理员配置的"系统提示词 / Skill / MCP / 模型"被平台<b>渲染并下发</b>到对应 Hermes Profile（SOUL.md / skills 目录 / config.yaml），Hermes 才是真正执行者。平台唯一在运行时做的事是<b>路由</b>：把飞书用户的请求导向所选专家的 Hermes 并把结果回传。
+  </div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section id="s3">
+  <h2><span class="no">3</span>角色与权限</h2>
+  <table>
+    <tr><th>角色</th><th>登录</th><th>权限</th></tr>
+    <tr><td>管理员</td><td>平台账号（可做 MFA）</td><td>全部：专家 CRUD、Skill/MCP 仓库、飞书接入、审计查看、专家启停</td></tr>
+    <tr><td>专家</td><td>—</td><td>非账号，是一个可被配置、可被选择的服务单元</td></tr>
+    <tr><td>飞书用户</td><td>飞书身份（open_id）</td><td>仅"选择可见的专家 + 对话"，无平台权限</td></tr>
+  </table>
+  <ul>
+    <li>平台侧：管理员登录即可看到全部菜单；不需要多租户/角色矩阵，保持极简。</li>
+    <li>飞书侧：权限靠飞书自身（<code>FEISHU_ALLOWED_USERS</code> 白名单、群策略、按用户 open_id 隔离会话）。</li>
+    <li>审计：所有配置变更与调用留痕（谁改的、谁调的、用了哪个专家/Skill/MCP）。</li>
+  </ul>
+</section>
+
+<!-- ============ 4 ============ -->
+<section id="s4">
+  <h2><span class="no">4</span>专家模型配置（核心）</h2>
+  <p class="lead">一个"专家"就是一张配置卡，管理员在后台填写保存后，平台把它渲染下发为对应 Hermes Profile 的配置。</p>
+  <h3>4.1 专家配置项 → Hermes 映射</h3>
+  <table>
+    <tr><th>管理员配置项</th><th>示例</th><th>下发到 Hermes 的位置</th></tr>
+    <tr><td>专家名称 / 描述</td><td>"数据分析专家：负责报表与指标分析"</td><td>Profile 描述（供飞书选择器展示）</td></tr>
+    <tr><td><b>系统提示词</b></td><td>"你是一名资深数据分析师，先问清口径，再用工具取数…"</td><td>Profile 的 <code>SOUL.md</code>（人格/系统指令）</td></tr>
+    <tr><td>模型 / 提供方</td><td>anthropic/claude-sonnet-4 或自定义端点</td><td>Profile <code>config.yaml</code> 的 <code>model.default</code></td></tr>
+    <tr><td>Skill 绑定</td><td>[sql 查询, 报表生成]</td><td>Profile <code>skills/&lt;cat&gt;/&lt;skill&gt;/</code> 目录</td></tr>
+    <tr><td>MCP 绑定</td><td>[internal-db(白名单: 查询), github]</td><td>Profile <code>config.yaml</code> 的 <code>mcp_servers</code></td></tr>
+    <tr><td>飞书可见性</td><td>启用 / 停用</td><td>专家选择器是否展示</td></tr>
+  </table>
+  <h3>4.2 专家生命周期</h3>
+  <ul>
+    <li><b>创建</b>：后台新建专家 → 平台自动创建对应 Hermes Profile（<code>hermes profile create &lt;name&gt; --description "..."</code>）。</li>
+    <li><b>编辑</b>：改系统提示词 / 换 Skill / 换 MCP / 换模型 → 平台重写 SOUL.md / skills / config.yaml → <b>热加载或重启生效</b>。</li>
+    <li><b>启停</b>：停用后从飞书选择器隐藏，且路由拒绝该专家请求。</li>
+    <li><b>删除</b>：停用 → 归档 → 清理 Profile（<code>hermes profile delete</code>）。</li>
+  </ul>
+  <h3>4.3 配置下发动作（平台 → Hermes）</h3>
+  <pre><span class="c"># 管理员保存专家后，平台执行（伪代码）</span>
+render_expert(expert):
+  1. 写系统提示词 → &lt;profile&gt;/SOUL.md
+  2. 同步绑定 Skill → &lt;profile&gt;/skills/&lt;cat&gt;/&lt;skill&gt;/
+  3. 合并 MCP + 模型 → &lt;profile&gt;/config.yaml (mcp_servers, model.default)
+  4. 触发热加载（API Server: /skills reload；gateway 模式: restart）
+  5. 回读校验（skills_list / doctor）确认生效</pre>
+</section>
+
+<!-- ============ 5 ============ -->
+<section id="s5">
+  <h2><span class="no">5</span>Skill 配置管理</h2>
+  <p class="lead">Skill 复用 Hermes 原生规范（SKILL.md + YAML frontmatter + 可选 references/scripts，兼容 agentskills.io）。平台维护<b>中央仓库</b>，管理员把 Skill 绑定到不同专家。</p>
+  <div class="cards">
+    <div class="c"><b>中央仓库</b><span>统一存储与索引；支持在线编写或上传；AI 自动生成的 Skill 可回流入库。</span></div>
+    <div class="c"><b>版本与审核</b><span>简单 semver；编辑后标记版本；可回滚到上一版。</span></div>
+    <div class="c"><b>专家绑定</b><span>在专家配置页勾选 Skill → 平台同步到该专家 Profile 的 skills 目录。</span></div>
+    <div class="c"><b>生效策略</b><span>保存即下发；不覆盖 Hermes 本地被修改过的 Skill（冲突保护）。</span></div>
+  </div>
+  <h3>5.1 SKILL.md 形态</h3>
+  <pre>---
+name: sql-query
+description: 针对内部数仓执行只读 SQL 查询并格式化结果
+version: 1.2.0
+metadata:
+  tags: [sql, database]
+  category: data
+requires_toolsets: [terminal, file]
+---</pre>
+</section>
+
+<!-- ============ 6 ============ -->
+<section id="s6">
+  <h2><span class="no">6</span>MCP 工具配置管理</h2>
+  <p class="lead">管理员在平台登记 MCP Server（工具来源），再把 Server（含工具过滤策略）绑定到专家；凭据统一托管。</p>
+  <table>
+    <tr><th>模块</th><th>说明</th></tr>
+    <tr><td>Server 注册</td><td>stdio 型（command/args/env）与 HTTP 型（url/headers）统一登记，存配置模板</td></tr>
+    <tr><td>Secret Vault</td><td>token/凭据加密托管；下发注入 <code>env</code>，日志不落明文</td></tr>
+    <tr><td>工具过滤</td><td>每个专家可对每个 Server 设置 <code>tools.include</code>/<code>tools.exclude</code>（默认白名单）</td></tr>
+    <tr><td>专家绑定</td><td>在专家配置页勾选 Server + 过滤策略 → 合并进该专家 config.yaml 的 <code>mcp_servers</code></td></tr>
+    <tr><td>健康检查</td><td>连通性探测、工具清单校验、调用审计</td></tr>
+  </table>
+  <h3>6.1 下发后 config.yaml 形态</h3>
+  <pre>mcp_servers:
+  internal-db:
+    url: "https://mcp.internal.corp:8443/mcp"
+    headers:
+      Authorization: "Bearer ***"        <span class="c"># Secret Vault 注入</span>
+    tools:
+      include: [list_datasets, run_sql_query]   <span class="c"># 只读白名单</span>
+    enabled: true
+  github:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: "***"
+    tools:
+      exclude: [delete_repo]</pre>
+</section>
+
+<!-- ============ 7 ============ -->
+<section id="s7">
+  <h2><span class="no">7</span>飞书接入与专家选择</h2>
+  <p class="lead">飞书用户是最终使用者。核心交互是"<b>选专家 → 干活</b>"。</p>
+  <h3>7.1 接入模式</h3>
+  <div class="callout teal">
+    <b>模式 A · 单机器人 + 平台路由（推荐）：</b>平台统一持有 1 个飞书 App，用户私聊/群聊 @ 机器人 → 平台发<b>专家选择卡片</b>（列出所有可见专家）→ 用户点选 → 平台路由到该专家的 Hermes 执行。一个机器人服务所有专家，能力统一、白名单统一。
+  </div>
+  <div class="callout teal">
+    <b>模式 B · 一专家一机器人：</b>某专家需要独立机器人身份（如对外部门专属机器人）时，平台为其单独配置 App 并托管 gateway。适合"每个专家独立对外"的场景。
+  </div>
+  <h3>7.2 专家选择机制（模式 A）</h3>
+  <table>
+    <tr><th>方式</th><th>用户操作</th><th>实现</th></tr>
+    <tr><td><span class="tag blue">推荐</span> 交互卡片</td><td>@机器人或发"专家" → 收到卡片 → 点选</td><td>飞书卡片按钮回调 → <code>card.action.trigger</code> → 平台路由</td></tr>
+    <tr><td>指令路由</td><td>直接输入"用数据分析专家：本周销量"</td><td>消息解析"专家名:"前缀 → 命中即路由</td></tr>
+    <tr><td>会话记忆</td><td>选过一次后默认保持该专家，可切换</td><td>按 用户+专家 维度保存 session 映射</td></tr>
+  </table>
+  <h3>7.3 会话与隔离</h3>
+  <ul>
+    <li>会话键 = <b>用户 open_id + 专家</b>：不同用户之间隔离，同一用户切换专家后上下文不串。</li>
+    <li>群聊：@机器人 才响应；按群 + 按用户隔离（对齐 Hermes <code>group_sessions_per_user: true</code>）。</li>
+    <li>消息去重（message_id，24h TTL）、突发批处理、typing 状态。</li>
+    <li>安全：<code>FEISHU_ALLOWED_USERS</code> 白名单、群策略、webhook 模式签名校验、限流。</li>
+  </ul>
+</section>
+
+<!-- ============ 8 ============ -->
+<section id="s8">
+  <h2><span class="no">8</span>两条链路：配置流 & 运行时流</h2>
+  <h3>8.1 配置流（管理员操作，低频）</h3>
+  <div class="seq">
+<pre><span class="c">管理员                    平台后台                Hermes Profile</span>
+   │ ① 创建/编辑专家（提示词/Skill/MCP/模型）        │                │
+   ├───────────────────→ ② 生成渲染配置               │                │
+   │                      │ ③ 写 SOUL.md / skills / config.yaml          │
+   │                      ├────────────────────────────────→ ④ 加载配置
+   │                      │ ◀────────────────────────────────  ⑤ 生效确认
+   │ ◀─────────────────── ⑥ 保存成功，专家上线            │                │</pre>
+  </div>
+  <h3>8.2 运行时流（飞书用户操作，高频）</h3>
+  <div class="seq">
+<pre><span class="c">飞书用户                  飞书机器人/平台            Hermes（所选专家）        底层 LLM</span>
+   │ ① 选择专家（卡片/指令）                            │                    │
+   ├───────────────────→ ② 路由到专家 A 的 Profile      │                    │
+   │ ③ 发送任务（含附件）   │                            │                    │
+   ├───────────────────→ ④ 组装（会话+已下发能力）        │                    │
+   │                      ├───────────────→ ⑤ API Server/CLI 调用          │
+   │                      │                │ ⑥ Agent 循环（Skill/MCP/工具）   │
+   │                      │                ├──────────────────→ ⑦ 模型推理
+   │                      │                │ ◀──────────────────  返回
+   │                      │ ◀─────────────── ⑧ 结果（流式）               │
+   │ ◀─────────────────── ⑨ 渲染回复/文件/卡片            │                    │
+   │                      │ ⑩ 审计/用量入库               │                    │</pre>
+  </div>
+</section>
+
+<!-- ============ 9 ============ -->
+<section id="s9">
+  <h2><span class="no">9</span>关键数据模型</h2>
+  <table>
+    <tr><th>实体</th><th>核心字段</th><th>说明</th></tr>
+    <tr><td><code>admin</code></td><td>id, username, password_hash, mfa</td><td>平台唯一登录角色</td></tr>
+    <tr><td><code>expert</code></td><td>id, name, description, system_prompt, model, profile_name, status, feishu_visible</td><td>专家配置；profile_name 关联 Hermes Profile</td></tr>
+    <tr><td><code>skill</code></td><td>id, name, version, category, description, tags</td><td>Skill 中央仓库（包体存对象存储）</td></tr>
+    <tr><td><code>expert_skill</code></td><td>expert_id, skill_id, version</td><td>专家 ↔ Skill 绑定</td></tr>
+    <tr><td><code>mcp_server</code></td><td>id, name, transport, config_template, secret_ref, tools_filter</td><td>MCP Server 注册与过滤策略</td></tr>
+    <tr><td><code>expert_mcp</code></td><td>expert_id, mcp_server_id, enabled, tools_filter</td><td>专家 ↔ MCP 绑定（可按专家覆盖过滤）</td></tr>
+    <tr><td><code>feishu_app</code></td><td>id, app_id, secret_ref, domain, mode</td><td>飞书接入配置（模式 A/B）</td></tr>
+    <tr><td><code>session</code></td><td>id, user_open_id, expert_id, channel_key, hermes_session_id, expire_at</td><td>飞书用户 × 专家 会话映射</td></tr>
+    <tr><td><code>call_log</code></td><td>id, expert_id, user_open_id, channel, skill_used, mcp_used, tokens, status, latency</td><td>调用审计 / 用量 / 成本</td></tr>
+  </table>
+</section>
+
+<!-- ============ 10 ============ -->
+<section id="s10">
+  <h2><span class="no">10</span>技术选型</h2>
+  <table>
+    <tr><th>层次</th><th>推荐</th><th>备选</th><th>理由</th></tr>
+    <tr><td>平台后端</td><td>Java Spring Boot 3</td><td>Python FastAPI</td><td>契合团队 Java 栈；管理后台 + 路由，负载不高</td></tr>
+    <tr><td>管理前端</td><td>Vue 3 + TypeScript</td><td>React</td><td>延续现有前端栈</td></tr>
+    <tr><td>元数据库</td><td>PostgreSQL</td><td>MySQL</td><td>JSONB 存配置模板/过滤策略</td></tr>
+    <tr><td>缓存/会话</td><td>Redis</td><td>—</td><td>会话映射、去重、限流</td></tr>
+    <tr><td>事件流</td><td>Kafka</td><td>Redis Stream</td><td>飞书事件、回复、审计解耦</td></tr>
+    <tr><td>执行调用</td><td>Hermes API Server（OpenAI 兼容）</td><td>CLI 兜底 / Python 库</td><td>多轮会话 + 工具齐全</td></tr>
+    <tr><td>飞书 SDK</td><td>lark-oapi（官方）</td><td>—</td><td>WebSocket / 卡片 / 事件订阅</td></tr>
+    <tr><td>MCP</td><td>官方 MCP SDK</td><td>—</td><td>Server 探测与工具清单校验</td></tr>
+    <tr><td>部署</td><td>Docker Compose（起步）→ K8s</td><td>—</td><td>平台与专家 Profile 独立扩缩</td></tr>
+  </table>
+</section>
+
+<!-- ============ 11 ============ -->
+<section id="s11">
+  <h2><span class="no">11</span>实施路线</h2>
+  <div class="road">
+    <div class="step"><div class="dot">M0</div><div class="line"></div>
+      <div class="body"><b>平台后台骨架 + 管理员登录 + 专家 CRUD</b><span class="dur">1 周</span>
+      <p>管理员登录；专家表与配置页（系统提示词/模型/Skill/MCP 绑定表单）。</p></div></div>
+    <div class="step"><div class="dot">M1</div><div class="line"></div>
+      <div class="body"><b>专家配置下发到 Hermes</b><span class="dur">1~2 周</span>
+      <p>平台创建 Profile、渲染写 SOUL.md/skills/config.yaml、热加载、回读校验；用 2~3 个示例专家验证"配置即生效"。</p></div></div>
+    <div class="step"><div class="dot">M2</div><div class="line"></div>
+      <div class="body"><b>Skill / MCP 中央仓库</b><span class="dur">1~2 周</span>
+      <p>Skill 仓库（编写/上传/绑定）；MCP 仓库（注册/Secret/过滤/绑定）；绑定变更自动触发下发。</p></div></div>
+    <div class="step"><div class="dot">M3</div><div class="line"></div>
+      <div class="body"><b>飞书接入 + 专家选择</b><span class="dur">1~2 周</span>
+      <p>模式 A：单机器人 + 专家选择卡片 + 指令路由 + 会话隔离 + 富文本/文件回复，闭环"选专家 → 干活"。</p></div></div>
+    <div class="step"><div class="dot">M4</div><div class="line"></div>
+      <div class="body"><b>审计 / 用量 / 运维</b><span class="dur">1 周</span>
+      <p>调用审计、token 用量与成本报表、专家健康监控、灰度启停。</p></div></div>
+    <div class="step"><div class="dot">M5</div><div class="line"></div>
+      <div class="body"><b>扩展</b><span class="dur">持续</span>
+      <p>一专家一机器人（模式 B）、多飞书 App、专家市场、多机 Fleet。</p></div></div>
+  </div>
+</section>
+
+<!-- ============ 12 ============ -->
+<section id="s12">
+  <h2><span class="no">12</span>风险与关键决策</h2>
+  <table>
+    <tr><th>风险 / 决策点</th><th>建议</th></tr>
+    <tr><td>专家与 Profile 的生命周期一致性</td><td>专家创建/删除与 Profile 创建/删除绑定为事务；删除前先停用归档</td></tr>
+    <tr><td>系统提示词更新生效</td><td>SOUL.md 新会话生效；告知"切换新会话后生效"，必要时强制重置该专家会话</td></tr>
+    <tr><td>Skill 被 Hermes 升级覆盖</td><td><code>hermes update</code> 会同步内置 Skill；平台记录"本地修改"标记并合并去重</td></tr>
+    <tr><td>会话隔离</td><td>严格按 用户+专家 隔离；切换专家/用户不串上下文（Hermes API Server 按会话隔离）</td></tr>
+    <tr><td>专家数量与资源</td><td>每个专家一个常驻 API Server 进程较耗资源；低频专家可"按需拉起/CLI 兜底"，空闲休眠</td></tr>
+    <tr><td>凭据安全</td><td>App Secret / MCP token 只入 Vault，日志脱敏，定期轮换</td></tr>
+    <tr><td>飞书用户误用敏感工具</td><td>每个专家默认最小工具面（MCP 白名单）；高危操作走交互卡片二次确认</td></tr>
+  </table>
+  <div class="callout teal">
+    <b>一句话总结：</b>平台 = <b>管理员配置中心 + 飞书路由网关</b>：管理员在后台配置"专家"（系统提示词 + Skill + MCP + 模型），平台将其渲染下发为对应 Hermes Profile；飞书用户选择专家后，平台把请求路由到该专家的 Hermes agent 执行（Hermes 调用底层模型），结果回传。平台不执行，执行永远在 Hermes。
+  </div>
+</section>
+
+<footer>Hermes 专家配置与飞书服务平台 · 技术方案 v3 · 2026-09-04</footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes 专家配置与飞书服务平台 · 演示</title>
+<style>
+  :root{
+    --bg:#F6F7F9; --card:#FFFFFF; --ink:#1F2329; --sub:#5F6B7A; --line:#E5E8EC;
+    --brand:#2F6FED; --brand-soft:#EAF1FE; --ok:#1FA35C; --warn:#D9822B; --err:#D9453C;
+    --teal:#0E8A83; --teal-soft:#E4F6F4; --violet:#6B4FD8; --violet-soft:#EFEBFB;
+    --amber-soft:#FDF3E2; --red-soft:#FCEBEA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--ink);font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,Roboto,sans-serif;line-height:1.6;font-size:14.5px;}
+  .wrap{max-width:1080px;margin:0 auto;padding:18px 16px 80px;}
+  header.hero{background:linear-gradient(135deg,#2F6FED 0%,#0E8A83 100%);color:#fff;border-radius:14px;padding:22px 24px;margin-bottom:18px;}
+  header.hero h1{font-size:20px;font-weight:700;}
+  header.hero .sub{margin-top:6px;font-size:13px;opacity:.92;}
+  header.hero .meta{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;}
+  header.hero .meta span{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);padding:3px 10px;border-radius:999px;font-size:11.5px;}
+  header.hero .who{float:right;font-size:12.5px;opacity:.95;}
+  header.hero .who button{margin-left:10px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:7px;padding:3px 10px;cursor:pointer;font-size:12px;}
+  nav.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
+  nav.tabs button{border:1px solid var(--line);background:var(--card);color:var(--sub);padding:8px 14px;border-radius:9px;cursor:pointer;font-size:13.5px;font-weight:500;}
+  nav.tabs button.active{background:var(--brand);color:#fff;border-color:var(--brand);}
+  nav.tabs button:hover:not(.active){border-color:var(--brand);color:var(--brand);}
+  .panel{display:none;}
+  .panel.active{display:block;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px;}
+  .card h2{font-size:15.5px;font-weight:700;margin-bottom:4px;}
+  .card .lead{font-size:13px;color:var(--sub);margin-bottom:12px;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+  .row label{font-size:13px;color:var(--sub);min-width:90px;}
+  input[type=text],input[type=password],textarea,select{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13.5px;font-family:inherit;background:#fff;color:var(--ink);}
+  textarea{min-height:90px;resize:vertical;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr;}}
+  .btn{background:var(--brand);color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13.5px;font-weight:500;}
+  .btn:hover{filter:brightness(1.06);}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand);}
+  .btn.danger{background:var(--err);}
+  .btn.sm{padding:5px 10px;font-size:12.5px;}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;}
+  th{background:#F2F5FA;text-align:left;padding:8px 10px;border:1px solid var(--line);font-weight:600;}
+  td{padding:8px 10px;border:1px solid var(--line);vertical-align:top;}
+  tr:nth-child(even) td{background:#FAFBFD;}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;font-weight:500;}
+  .tag.blue{background:var(--brand-soft);color:var(--brand);}
+  .tag.green{background:#E5F6EC;color:var(--ok);}
+  .tag.amber{background:var(--amber-soft);color:var(--warn);}
+  .tag.red{background:var(--red-soft);color:var(--err);}
+  .tag.violet{background:var(--violet-soft);color:var(--violet);}
+  .tag.teal{background:var(--teal-soft);color:var(--teal);}
+  .callout{border-left:4px solid var(--brand);background:var(--brand-soft);border-radius:0 9px 9px 0;padding:10px 14px;margin:10px 0;font-size:13px;}
+  .callout.teal{border-left-color:var(--teal);background:var(--teal-soft);}
+  .callout.amber{border-left-color:var(--warn);background:var(--amber-soft);}
+  .callout.red{border-left-color:var(--err);background:var(--red-soft);}
+  .modal-mask{position:fixed;inset:0;background:rgba(20,28,40,.5);display:none;align-items:center;justify-content:center;z-index:50;padding:14px;}
+  .modal-mask.show{display:flex;}
+  .modal{background:#fff;border-radius:12px;width:100%;max-width:620px;max-height:88vh;overflow:auto;padding:20px;}
+  .modal h3{font-size:16px;margin-bottom:10px;}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;}
+  .chip{border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;user-select:none;background:#fff;}
+  .chip.on{background:var(--brand-soft);border-color:var(--brand);color:var(--brand);font-weight:600;}
+  pre{background:#1E2530;color:#E6EAF0;border-radius:9px;padding:12px;overflow:auto;font-size:12px;line-height:1.55;font-family:Consolas,monospace;white-space:pre-wrap;}
+  pre .c{color:#7C8AA0;}
+  .login{max-width:340px;margin:60px auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:24px;}
+  .login h2{font-size:17px;margin-bottom:14px;}
+  .login .err{color:var(--err);font-size:12.5px;margin-top:8px;min-height:16px;}
+  .muted{color:var(--sub);font-size:12.5px;}
+  .files .f{margin-bottom:12px;}
+  .files .fname{font-size:12px;color:var(--teal);font-weight:600;margin-bottom:4px;font-family:Consolas,monospace;}
+  .empty{color:var(--sub);font-size:13px;padding:20px;text-align:center;}
+  .pill{font-size:11px;padding:1px 7px;border-radius:5px;background:#F0F2F5;color:var(--sub);margin-left:6px;}
+  details summary{cursor:pointer;font-size:13px;color:var(--brand);font-weight:600;padding:6px 0;}
+  .kv{font-size:12.5px;color:var(--sub);margin-top:4px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="who" id="who" style="display:none">管理员：<b id="whoName"></b><button onclick="logout()">退出</button></div>
+    <h1>Hermes 专家配置与飞书服务平台</h1>
+    <div class="sub">管理员配置「专家」（系统提示词 + Skill + MCP + 模型）→ 下发 Hermes Profile → 飞书用户选择专家干活。平台只配置与路由，执行永远在 Hermes。</div>
+    <div class="meta">
+      <span>仅管理员登录</span><span>专家模型配置中心</span><span>Skill / MCP 绑定</span><span>飞书选专家 · Hermes 执行</span>
+    </div>
+  </header>
+
+  <!-- 登录 -->
+  <div class="login" id="loginBox">
+    <h2>管理员登录</h2>
+    <div class="row"><label>用户名</label><input type="text" id="lu" value="admin"></div>
+    <div class="row"><label>密码</label><input type="password" id="lp" value="admin123"></div>
+    <button class="btn" onclick="login()">登录</button>
+    <div class="err" id="lerr"></div>
+    <div class="muted" style="margin-top:10px">演示账号 admin / admin123</div>
+  </div>
+
+  <!-- 主应用 -->
+  <div id="app" style="display:none">
+    <nav class="tabs" id="tabs">
+      <button class="active" data-tab="experts">专家配置</button>
+      <button data-tab="skills">Skill 仓库</button>
+      <button data-tab="mcp">MCP 管理</button>
+      <button data-tab="tools">平台工具</button>
+      <button data-tab="feishu">飞书模拟器</button>
+      <button data-tab="settings">平台设置</button>
+      <button data-tab="flow">链路说明</button>
+    </nav>
+
+    <!-- 专家配置 -->
+    <div class="panel active" id="p-experts">
+      <div class="card">
+        <h2>专家列表</h2>
+        <div class="lead">每个专家 = 系统提示词 + Skill 绑定 + MCP 绑定 + 平台工具绑定 + 模型。保存即下发到 Hermes Profile，配 DeepSeek Key 后可真实执行。</div>
+        <div class="row">
+          <button class="btn" onclick="openExpertModal()">+ 新建专家</button>
+          <button class="btn ghost" onclick="loadExperts()">刷新</button>
+        </div>
+        <div id="expertTable"></div>
+      </div>
+    </div>
+
+    <!-- Skill 仓库 -->
+    <div class="panel" id="p-skills">
+      <div class="card">
+        <h2>Skill 中央仓库</h2>
+        <div class="lead">复用 Hermes 原生 SKILL.md 规范。管理员编写后可绑定到多个专家。</div>
+        <div class="row">
+          <button class="btn" onclick="openSkillModal()">+ 新建 Skill</button>
+          <button class="btn ghost" onclick="loadSkills()">刷新</button>
+        </div>
+        <div id="skillTable"></div>
+      </div>
+    </div>
+
+    <!-- MCP 管理 -->
+    <div class="panel" id="p-mcp">
+      <div class="card">
+        <h2>MCP Server 注册</h2>
+        <div class="lead">登记工具来源（stdio / http），统一凭据托管，按专家过滤工具白名单。</div>
+        <div class="row">
+          <button class="btn" onclick="openMcpModal()">+ 注册 MCP Server</button>
+          <button class="btn ghost" onclick="loadMcp()">刷新</button>
+        </div>
+        <div id="mcpTable"></div>
+      </div>
+    </div>
+
+    <!-- 平台工具 -->
+    <div class="panel" id="p-tools">
+      <div class="card">
+        <h2>平台内置可执行工具</h2>
+        <div class="lead">这些工具在平台内可真实执行，供 Agent 循环（DeepSeek function calling）调用。在专家配置中勾选绑定即可。也可视为外部 MCP 在演示环境下的本地替身。</div>
+        <div class="row"><button class="btn ghost" onclick="loadTools()">刷新</button></div>
+        <div id="toolTable"></div>
+      </div>
+    </div>
+
+    <!-- 飞书模拟器 -->
+    <div class="panel" id="p-feishu">
+      <div class="card">
+        <h2>飞书模拟器（模式 A · 单机器人 + 平台路由）</h2>
+        <div class="lead">模拟飞书用户：从「专家选择卡片」中选一个专家 → 发送任务 → 平台路由到该专家 Hermes 执行 → 回传。</div>
+        <div class="callout teal"><b>会话隔离：</b>按 用户 open_id + 专家 维度隔离，切换专家不串上下文。</div>
+        <div class="row" style="align-items:flex-start">
+          <label style="margin-top:8px">open_id</label>
+          <input type="text" id="fu" value="sim_user_001" style="max-width:220px">
+        </div>
+        <h3 style="font-size:14px;margin:10px 0 6px">① 专家选择卡片</h3>
+        <div id="expertCards" class="chips"></div>
+        <h3 style="font-size:14px;margin:14px 0 6px">② 当前专家：<span id="curExpert" class="muted">（未选择）</span></h3>
+        <div class="row">
+          <input type="text" id="fmsg" placeholder="输入任务，例如：本周各品类销量排行">
+          <button class="btn" onclick="runTask()">发送任务</button>
+        </div>
+        <div id="runResult"></div>
+      </div>
+    </div>
+
+    <!-- 平台设置 -->
+    <div class="panel" id="p-settings">
+      <div class="card">
+        <h2>平台设置 · DeepSeek</h2>
+        <div class="lead">配置后，飞书模拟器调用专家时将真实请求 DeepSeek（OpenAI 兼容）完成 function-calling Agent 循环。未配置则回退到模拟回显。</div>
+        <div id="settingsBox">
+          <div class="row"><label>DeepSeek API Key</label>
+            <input type="password" id="setKey" placeholder="sk-..." autocomplete="off"></div>
+          <div class="muted" id="keyHint" style="margin-left:100px;margin-top:-4px;margin-bottom:8px">未配置</div>
+          <div class="row"><label>Base URL</label>
+            <input type="text" id="setUrl" value="https://api.deepseek.com/v1"></div>
+          <div class="row"><label>默认模型</label>
+            <input type="text" id="setModel" value="deepseek-chat">
+            <span class="muted">deepseek-chat 支持 function calling；deepseek-reasoner 不支持工具</span></div>
+          <div class="row" style="justify-content:flex-end">
+            <button class="btn" onclick="saveSettings()">保存 DeepSeek 设置</button>
+          </div>
+        </div>
+        <div class="callout teal" id="settingsStatus" style="display:none"></div>
+      </div>
+
+      <div class="card">
+        <h2>飞书接入 · WebSocket 长连接</h2>
+        <div class="lead">填入飞书自建应用的 App ID / Secret，启用后平台将通过 WebSocket 长连接接收消息（无需公网域名）。保存后点「启动连接」或重启服务生效。</div>
+        <div class="callout teal">
+          <b>接入步骤：</b>① 在 <code>open.feishu.cn/app</code> 创建自建应用 → ②「权限管理」开通 <code>im:message</code>、<code>im:message:send_as_bot</code>、<code>im:chat:readonly</code> →
+          ③「事件订阅」选「长连接」模式，订阅 <code>im.message.receive_v1</code> 与 <code>card.action.trigger</code> → ④「机器人」启用 → ⑤「版本管理与发布」创建版本并发布 → ⑥ 把 App ID/Secret 填入下方保存 → ⑦ 启动连接后在飞书里 @机器人 发「专家」。
+        </div>
+        <div id="feishuSettingsBox">
+          <div class="grid2">
+            <div><label class="muted">App ID</label>
+              <input type="text" id="setFsAppId" placeholder="cli_xxxxxx" autocomplete="off"></div>
+            <div><label class="muted">App Secret</label>
+              <input type="password" id="setFsAppSecret" placeholder="应用 Secret" autocomplete="off"></div>
+          </div>
+          <div class="muted" id="fsSecretHint" style="margin-top:4px;margin-bottom:8px">未配置</div>
+          <div class="row"><label>允许的 open_id</label>
+            <input type="text" id="setFsUsers" placeholder="留空=允许所有人；多个用逗号分隔">
+            <span class="muted">演示用白名单</span></div>
+          <div class="row"><label>启用飞书</label>
+            <select id="setFsEnabled"><option value="false">关闭</option><option value="true">启用</option></select>
+            <span class="muted">启用后服务启动时自动拉起 WS 长连接</span></div>
+          <div class="row" style="justify-content:flex-end">
+            <button class="btn" onclick="saveFeishuSettings()">保存飞书设置</button>
+          </div>
+        </div>
+
+        <h3 style="font-size:14px;margin:14px 0 8px">连接状态</h3>
+        <div id="fsStatusBox"><div class="muted">加载中…</div></div>
+        <div class="row" style="margin-top:10px;gap:8px">
+          <button class="btn sm" onclick="feishuControl('start')">启动连接</button>
+          <button class="btn ghost sm" onclick="feishuControl('restart')">重启连接</button>
+          <button class="btn ghost sm" onclick="feishuControl('stop')">停止连接</button>
+          <button class="btn ghost sm" onclick="loadFeishuStatus()">刷新状态</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 链路说明 -->
+    <div class="panel" id="p-flow">
+      <div class="card">
+        <h2>配置流（管理员，低频）</h2>
+        <pre><span class="c">管理员          平台后台              Hermes Profile</span>
+ ① 创建/编辑专家（提示词/Skill/MCP/模型）
+   └────────→ ② 生成渲染配置
+              ③ 写 SOUL.md / skills / config.yaml
+              └──────────────────→ ④ 加载配置
+              ◀──────────────────  ⑤ 生效确认
+   ◀──────── ⑥ 保存成功，专家上线</pre>
+      </div>
+      <div class="card">
+        <h2>运行时流（飞书用户，高频）</h2>
+        <pre><span class="c">飞书用户     飞书机器人/平台      Hermes（所选专家）      底层 LLM</span>
+ ① 选专家（卡片/指令）
+   └─────→ ② 路由到专家 Profile
+ ③ 发送任务   │
+   └─────→ ④ 组装（会话+已下发能力）
+            └──────→ ⑤ API Server 调用
+                     ⑥ Agent 循环（Skill/MCP/工具）
+                     └────────→ ⑦ 模型推理
+                     ◀────────  返回
+            ◀────── ⑧ 结果（流式）
+   ◀──── ⑨ 渲染回复/文件/卡片
+            ⑩ 审计/用量入库</pre>
+        <div class="callout red"><b>职责边界：</b>平台不跑模型、不跑 Agent 循环；真正的执行由 Hermes 完成。本演示用 HermesExecutor 模拟执行以闭环验证配置链路。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 专家编辑弹窗 -->
+  <div class="modal-mask" id="expertModal">
+    <div class="modal">
+      <h3 id="expertModalTitle">新建专家</h3>
+      <input type="hidden" id="exId">
+      <div class="grid2">
+        <div><label class="muted">专家名称</label><input type="text" id="exName" placeholder="数据分析专家"></div>
+        <div><label class="muted">Profile 名（唯一）</label><input type="text" id="exProfile" placeholder="data-analyst"></div>
+      </div>
+      <div style="margin-top:8px"><label class="muted">描述</label><input type="text" id="exDesc" placeholder="负责报表与指标分析"></div>
+      <div class="grid2" style="margin-top:8px">
+        <div><label class="muted">模型 / 提供方</label><input type="text" id="exModel" value="anthropic/claude-sonnet-4"></div>
+        <div><label class="muted">状态</label>
+          <select id="exStatus"><option value="active">active</option><option value="disabled">disabled</option></select></div>
+      </div>
+      <div style="margin-top:8px"><label class="muted">飞书可见</label>
+        <select id="exVis"><option value="true">可见</option><option value="false">隐藏</option></select></div>
+      <div style="margin-top:10px"><label class="muted">系统提示词（下发到 SOUL.md）</label>
+        <textarea id="exSoul" placeholder="你是一名资深数据分析师..."></textarea></div>
+      <div style="margin-top:10px"><label class="muted">绑定 Skill</label>
+        <div id="exSkills" class="chips"></div></div>
+      <div style="margin-top:10px"><label class="muted">绑定 MCP Server</label>
+        <div id="exMcps" class="chips"></div></div>
+      <div style="margin-top:10px"><label class="muted">绑定平台工具（可真实执行，供 Agent 调用）</label>
+        <div id="exTools" class="chips"></div></div>
+      <div class="row" style="margin-top:14px;justify-content:flex-end">
+        <button class="btn ghost" onclick="closeModal('expertModal')">取消</button>
+        <button class="btn" onclick="saveExpert()">保存并下发</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Skill 编辑弹窗 -->
+  <div class="modal-mask" id="skillModal">
+    <div class="modal">
+      <h3>新建 Skill</h3>
+      <div class="grid2">
+        <div><label class="muted">名称</label><input type="text" id="skName" placeholder="sql-query"></div>
+        <div><label class="muted">版本</label><input type="text" id="skVer" value="1.0.0"></div>
+      </div>
+      <div class="grid2" style="margin-top:8px">
+        <div><label class="muted">分类</label><input type="text" id="skCat" placeholder="data"></div>
+        <div><label class="muted">标签（逗号分隔）</label><input type="text" id="skTags" placeholder="sql,database"></div>
+      </div>
+      <div style="margin-top:8px"><label class="muted">描述</label><input type="text" id="skDesc"></div>
+      <div style="margin-top:8px"><label class="muted">SKILL.md 正文</label>
+        <textarea id="skContent" placeholder="## 用法&#10;当需要...时调用本 Skill"></textarea></div>
+      <div class="row" style="margin-top:14px;justify-content:flex-end">
+        <button class="btn ghost" onclick="closeModal('skillModal')">取消</button>
+        <button class="btn" onclick="saveSkill()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MCP 编辑弹窗 -->
+  <div class="modal-mask" id="mcpModal">
+    <div class="modal">
+      <h3>注册 MCP Server</h3>
+      <div class="grid2">
+        <div><label class="muted">名称</label><input type="text" id="mcName" placeholder="internal-db"></div>
+        <div><label class="muted">传输方式</label>
+          <select id="mcTransport" onchange="toggleMcpTemplate()">
+            <option value="http">http（url/headers）</option>
+            <option value="stdio">stdio（command/args/env）</option>
+          </select></div>
+      </div>
+      <div style="margin-top:8px"><label class="muted">配置模板 JSON</label>
+        <textarea id="mcConfig" placeholder='{"url":"https://mcp.internal.corp:8443/mcp","headers":{"Authorization":"Bearer xxx"}}'></textarea></div>
+      <div style="margin-top:8px"><label class="muted">工具过滤（逗号分隔，http=白名单 / stdio=排除）</label>
+        <input type="text" id="mcTools" placeholder="list_datasets,run_sql_query"></div>
+      <div class="row" style="margin-top:14px;justify-content:flex-end">
+        <button class="btn ghost" onclick="closeModal('mcpModal')">取消</button>
+        <button class="btn" onclick="saveMcp()">注册</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let TOKEN = localStorage.getItem('hp_token') || '';
+let ALL_SKILLS = [], ALL_MCP = [], ALL_TOOLS = [];
+let SELECTED_EXPERT_ID = null;
+
+const api = (p, opt={}) => fetch(p, {
+  ...opt,
+  headers: TOKEN ? {...(opt.headers||{}), 'Authorization': 'Bearer ' + TOKEN} : (opt.headers||{}),
+}).then(async r => {
+  const txt = await r.text();
+  let data; try { data = txt ? JSON.parse(txt) : {} } catch(e){ data = {detail: txt} }
+  if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+  return data;
+});
+
+// ---------- Auth ----------
+async function login(){
+  try{
+    const r = await api('/api/auth/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({username: document.getElementById('lu').value, password: document.getElementById('lp').value})
+    });
+    TOKEN = r.token; localStorage.setItem('hp_token', TOKEN);
+    document.getElementById('loginBox').style.display='none';
+    document.getElementById('app').style.display='block';
+    document.getElementById('who').style.display='block';
+    document.getElementById('whoName').textContent = r.username;
+    document.getElementById('lerr').textContent = '';
+    await initAll();
+  } catch(e){ document.getElementById('lerr').textContent = '登录失败：' + e.message; }
+}
+function logout(){ TOKEN=''; localStorage.removeItem('hp_token'); location.reload(); }
+
+// ---------- Tabs ----------
+document.getElementById('tabs').addEventListener('click', e=>{
+  if(e.target.tagName!=='BUTTON') return;
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.remove('active'));
+  e.target.classList.add('active');
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('p-'+e.target.dataset.tab).classList.add('active');
+});
+
+// ---------- Experts ----------
+async function loadExperts(){
+  const list = await api('/api/experts');
+  const tbl = document.getElementById('expertTable');
+  if(!list.length){ tbl.innerHTML = '<div class="empty">暂无专家，点击「新建专家」开始</div>'; return; }
+  tbl.innerHTML = `<table>
+    <tr><th>ID</th><th>专家</th><th>Profile</th><th>模型</th><th>Skill</th><th>MCP</th><th>平台工具</th><th>飞书</th><th>下发</th><th>操作</th></tr>
+    ${list.map(e=>`<tr>
+      <td>${e.id}</td>
+      <td><b>${esc(e.name)}</b><div class="muted">${esc(e.description||'')}</div></td>
+      <td><code>${esc(e.profile_name)}</code></td>
+      <td><span class="pill">${esc(e.model)}</span></td>
+      <td>${e.skill_ids.length?`<span class="tag violet">${e.skill_ids.length}</span>`:'<span class="muted">-</span>'}</td>
+      <td>${e.mcp_ids.length?`<span class="tag teal">${e.mcp_ids.length}</span>`:'<span class="muted">-</span>'}</td>
+      <td>${e.platform_tool_ids&&e.platform_tool_ids.length?`<span class="tag blue">${e.platform_tool_ids.length}</span>`:'<span class="muted">-</span>'}</td>
+      <td>${e.feishu_visible?`<span class="tag green">可见</span>`:'<span class="tag amber">隐藏</span>'}</td>
+      <td>${e.rendered?'<span class="tag green">已下发</span>':'<span class="tag red">未下发</span>'}</td>
+      <td>
+        <button class="btn sm" onclick="editExpert(${e.id})">编辑</button>
+        <button class="btn ghost sm" onclick="viewProfile(${e.id})">查看Profile</button>
+        <button class="btn danger sm" onclick="delExpert(${e.id})">删除</button>
+      </td>
+    </tr>`).join('')}</table>`;
+}
+async function openExpertModal(){
+  document.getElementById('expertModalTitle').textContent = '新建专家';
+  document.getElementById('exId').value='';
+  document.getElementById('exName').value='';
+  document.getElementById('exProfile').value='';
+  document.getElementById('exDesc').value='';
+  document.getElementById('exModel').value='deepseek/deepseek-chat';
+  document.getElementById('exStatus').value='active';
+  document.getElementById('exVis').value='true';
+  document.getElementById('exSoul').value='';
+  await renderChips('#exSkills', ALL_SKILLS, []);
+  await renderChips('#exMcps', ALL_MCP, []);
+  await renderChips('#exTools', ALL_TOOLS, []);
+  document.getElementById('expertModal').classList.add('show');
+}
+async function editExpert(id){
+  const e = await api('/api/experts/'+id);
+  document.getElementById('expertModalTitle').textContent = '编辑专家 #'+e.id;
+  document.getElementById('exId').value=e.id;
+  document.getElementById('exName').value=e.name;
+  document.getElementById('exProfile').value=e.profile_name;
+  document.getElementById('exDesc').value=e.description||'';
+  document.getElementById('exModel').value=e.model;
+  document.getElementById('exStatus').value=e.status;
+  document.getElementById('exVis').value=String(e.feishu_visible);
+  document.getElementById('exSoul').value=e.system_prompt||'';
+  await renderChips('#exSkills', ALL_SKILLS, e.skill_ids);
+  await renderChips('#exMcps', ALL_MCP, e.mcp_ids);
+  await renderChips('#exTools', ALL_TOOLS, e.platform_tool_ids||[]);
+  document.getElementById('expertModal').classList.add('show');
+}
+function renderChips(sel, items, onIds){
+  const el = document.querySelector(sel);
+  el.innerHTML = items.map(i=>`<span class="chip ${onIds.includes(i.id)?'on':''}" data-id="${i.id}">${esc(i.name)}</span>`).join('') || '<span class="muted">（仓库为空，请先创建）</span>';
+  el.querySelectorAll('.chip').forEach(c=>c.onclick=()=>c.classList.toggle('on'));
+}
+function selectedIds(sel){ return Array.from(document.querySelectorAll(sel+' .chip.on')).map(c=>parseInt(c.dataset.id)); }
+async function saveExpert(){
+  const id = document.getElementById('exId').value;
+  const body = {
+    name: val('exName'), profile_name: val('exProfile'), description: val('exDesc'),
+    model: val('exModel'), status: val('exStatus'),
+    feishu_visible: val('exVis')==='true',
+    system_prompt: val('exSoul'),
+    skill_ids: selectedIds('#exSkills'), mcp_ids: selectedIds('#exMcps'),
+    platform_tool_ids: selectedIds('#exTools')
+  };
+  try{
+    if(id){ await api('/api/experts/'+id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
+    else{ await api('/api/experts', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
+    closeModal('expertModal'); loadExperts(); loadFeishuExperts();
+  } catch(e){ alert('保存失败：'+e.message); }
+}
+async function delExpert(id){
+  if(!confirm('确认删除该专家及其 Profile？')) return;
+  await api('/api/experts/'+id, {method:'DELETE'});
+  loadExperts(); loadFeishuExperts();
+}
+async function viewProfile(id){
+  const r = await api('/api/experts/'+id+'/profile-files');
+  let html = `<div class="callout teal"><b>已下发 Hermes Profile 目录：</b><br><code>${esc(r.dir)}</code></div>`;
+  if(Object.keys(r.files).length===0) html += '<div class="empty">Profile 尚未下发</div>';
+  else html += '<div class="files">' + Object.entries(r.files).map(([n,c])=>`<div class="f"><div class="fname">${esc(n)}</div><pre>${esc(c)}</pre></div>`).join('') + '</div>';
+  document.getElementById('runResult').innerHTML = html;
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.remove('active'));
+  document.querySelector('#tabs button[data-tab="feishu"]').classList.add('active');
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('p-feishu').classList.add('active');
+}
+
+// ---------- Skills ----------
+async function loadSkills(){
+  ALL_SKILLS = await api('/api/skills');
+  const tbl = document.getElementById('skillTable');
+  if(!ALL_SKILLS.length){ tbl.innerHTML = '<div class="empty">暂无 Skill</div>'; return; }
+  tbl.innerHTML = `<table><tr><th>ID</th><th>名称</th><th>版本</th><th>分类</th><th>标签</th><th>描述</th><th>操作</th></tr>
+    ${ALL_SKILLS.map(s=>`<tr>
+      <td>${s.id}</td><td><code>${esc(s.name)}</code></td><td><span class="pill">${esc(s.version)}</span></td>
+      <td><span class="tag violet">${esc(s.category)}</span></td><td>${esc(s.tags||'-')}</td>
+      <td class="muted">${esc(s.description||'')}</td>
+      <td><button class="btn danger sm" onclick="delSkill(${s.id})">删除</button></td>
+    </tr>`).join('')}</table>`;
+}
+function openSkillModal(){
+  ['skName','skVer','skCat','skTags','skDesc','skContent'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('skVer').value='1.0.0';
+  document.getElementById('skillModal').classList.add('show');
+}
+async function saveSkill(){
+  const body = {
+    name: val('skName'), version: val('skVer'), category: val('skCat')||'general',
+    tags: val('skTags'), description: val('skDesc'), content: val('skContent')
+  };
+  try{ await api('/api/skills', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    closeModal('skillModal'); loadSkills();
+  } catch(e){ alert('保存失败：'+e.message); }
+}
+async function delSkill(id){
+  if(!confirm('删除该 Skill？')) return;
+  await api('/api/skills/'+id, {method:'DELETE'}); loadSkills();
+}
+
+// ---------- MCP ----------
+async function loadMcp(){
+  ALL_MCP = await api('/api/mcp-servers');
+  const tbl = document.getElementById('mcpTable');
+  if(!ALL_MCP.length){ tbl.innerHTML = '<div class="empty">暂无 MCP Server</div>'; return; }
+  tbl.innerHTML = `<table><tr><th>ID</th><th>名称</th><th>传输</th><th>工具过滤</th><th>配置模板</th><th>操作</th></tr>
+    ${ALL_MCP.map(m=>`<tr>
+      <td>${m.id}</td><td><code>${esc(m.name)}</code></td>
+      <td><span class="tag teal">${esc(m.transport)}</span></td>
+      <td>${esc(m.tools_filter||'-')}</td>
+      <td class="muted" style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${esc(m.config_template)}</td>
+      <td><button class="btn danger sm" onclick="delMcp(${m.id})">删除</button></td>
+    </tr>`).join('')}</table>`;
+}
+function openMcpModal(){
+  ['mcName','mcConfig','mcTools'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('mcTransport').value='http';
+  document.getElementById('mcpModal').classList.add('show');
+}
+function toggleMcpTemplate(){
+  const t = document.getElementById('mcTransport').value;
+  document.getElementById('mcConfig').placeholder = t==='http'
+    ? '{"url":"https://mcp.internal.corp:8443/mcp","headers":{"Authorization":"Bearer xxx"}}'
+    : '{"command":"npx","args":["-y","@modelcontextprotocol/server-github"],"env":{"GITHUB_PERSONAL_ACCESS_TOKEN":"xxx"}}';
+}
+async function saveMcp(){
+  const body = {
+    name: val('mcName'), transport: val('mcTransport'),
+    config_template: val('mcConfig')||'{}', tools_filter: val('mcTools')
+  };
+  try{ await api('/api/mcp-servers', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    closeModal('mcpModal'); loadMcp();
+  } catch(e){ alert('保存失败：'+e.message); }
+}
+async function delMcp(id){
+  if(!confirm('删除该 MCP Server？')) return;
+  await api('/api/mcp-servers/'+id, {method:'DELETE'}); loadMcp();
+}
+
+// ---------- 平台工具 ----------
+async function loadTools(){
+  ALL_TOOLS = await api('/api/platform-tools');
+  const tbl = document.getElementById('toolTable');
+  if(!ALL_TOOLS.length){ tbl.innerHTML = '<div class="empty">暂无平台工具</div>'; return; }
+  tbl.innerHTML = `<table><tr><th>ID</th><th>名称</th><th>分类</th><th>描述</th><th>参数 schema</th></tr>
+    ${ALL_TOOLS.map(t=>`<tr>
+      <td>${t.id}</td><td><code>${esc(t.name)}</code></td>
+      <td><span class="tag blue">${esc(t.category)}</span></td>
+      <td class="muted">${esc(t.description||'')}</td>
+      <td class="muted" style="max-width:320px;overflow:hidden;text-overflow:ellipsis"><code>${esc(t.parameters_json)}</code></td>
+    </tr>`).join('')}</table>`;
+}
+
+// ---------- 平台设置（DeepSeek + 飞书）----------
+async function loadSettings(){
+  const s = await api('/api/settings');
+  document.getElementById('setKey').value = '';
+  document.getElementById('setKey').placeholder = s.deepseek_api_key_set ? ('已配置：'+s.deepseek_api_key) : 'sk-...';
+  document.getElementById('keyHint').textContent = s.deepseek_api_key_set ? ('已配置（'+s.deepseek_api_key+'）。留空保存则不变更。') : '未配置';
+  document.getElementById('setUrl').value = s.deepseek_base_url;
+  document.getElementById('setModel').value = s.deepseek_default_model;
+  // 飞书
+  document.getElementById('setFsAppId').value = s.feishu_app_id || '';
+  document.getElementById('setFsAppSecret').value = '';
+  document.getElementById('setFsAppSecret').placeholder = s.feishu_app_secret_set ? ('已配置：'+s.feishu_app_secret) : '应用 Secret';
+  document.getElementById('fsSecretHint').textContent = s.feishu_app_secret_set ? ('已配置（'+s.feishu_app_secret+'）。留空保存则不变更。') : '未配置';
+  document.getElementById('setFsUsers').value = s.feishu_allowed_users || '';
+  document.getElementById('setFsEnabled').value = s.feishu_enabled ? 'true' : 'false';
+  await loadFeishuStatus();
+}
+async function saveSettings(){
+  const body = {
+    deepseek_base_url: val('setUrl'),
+    deepseek_default_model: val('setModel'),
+  };
+  const k = document.getElementById('setKey').value;
+  if(k) body.deepseek_api_key = k;  // 留空 = 不变更
+  try{
+    const s = await api('/api/settings', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    document.getElementById('setKey').value='';
+    document.getElementById('setKey').placeholder = s.deepseek_api_key_set ? ('已配置：'+s.deepseek_api_key) : 'sk-...';
+    document.getElementById('keyHint').textContent = s.deepseek_api_key_set ? ('已配置（'+s.deepseek_api_key+'）。') : '未配置';
+    const box = document.getElementById('settingsStatus');
+    box.style.display='block';
+    box.className = 'callout ' + (s.deepseek_api_key_set?'teal':'amber');
+    box.innerHTML = s.deepseek_api_key_set
+      ? '<b>DeepSeek 已保存。</b>现在去「飞书模拟器」选一个专家发任务，将真实调用 DeepSeek。'
+      : '<b>未配置 Key。</b>飞书模拟器将回退到模拟回显。';
+  } catch(e){ alert('保存失败：'+e.message); }
+}
+async function saveFeishuSettings(){
+  const body = {
+    feishu_app_id: val('setFsAppId'),
+    feishu_allowed_users: val('setFsUsers'),
+    feishu_enabled: val('setFsEnabled')==='true',
+  };
+  const sec = document.getElementById('setFsAppSecret').value;
+  if(sec) body.feishu_app_secret = sec;  // 留空 = 不变更
+  try{
+    const s = await api('/api/settings', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    document.getElementById('setFsAppId').value = s.feishu_app_id || '';
+    document.getElementById('setFsAppSecret').value='';
+    document.getElementById('setFsAppSecret').placeholder = s.feishu_app_secret_set ? ('已配置：'+s.feishu_app_secret) : '应用 Secret';
+    document.getElementById('fsSecretHint').textContent = s.feishu_app_secret_set ? ('已配置（'+s.feishu_app_secret+'）。') : '未配置';
+    document.getElementById('setFsUsers').value = s.feishu_allowed_users || '';
+    document.getElementById('setFsEnabled').value = s.feishu_enabled ? 'true' : 'false';
+    await loadFeishuStatus();
+    alert('飞书设置已保存。如需生效请点「启动连接」或重启服务。');
+  } catch(e){ alert('保存失败：'+e.message); }
+}
+async function loadFeishuStatus(){
+  try{
+    const st = await api('/api/feishu/status');
+    const box = document.getElementById('fsStatusBox');
+    const cfgTag = st.configured ? '<span class="tag green">凭证齐全</span>' : '<span class="tag red">缺少凭证</span>';
+    const enTag = st.enabled ? '<span class="tag green">已启用</span>' : '<span class="tag amber">未启用</span>';
+    const runTag = st.running ? '<span class="tag green">运行中</span>' : '<span class="tag amber">已停止</span>';
+    let html = `<table>
+      <tr><th>状态项</th><th>值</th></tr>
+      <tr><td>凭证</td><td>${cfgTag} ${st.app_id?('App ID: <code>'+esc(st.app_id)+'</code>'):'（未填 App ID）'}</td></tr>
+      <tr><td>启用开关</td><td>${enTag}</td></tr>
+      <tr><td>WS 连接</td><td>${runTag}</td></tr>
+      <tr><td>最近事件</td><td>${st.last_event_at?esc(st.last_event_at):'<span class="muted">无</span>'}</td></tr>
+      <tr><td>错误</td><td>${st.error?('<span class="tag red">'+esc(st.error)+'</span>'):'<span class="muted">无</span>'}</td></tr>
+    </table>`;
+    box.innerHTML = html;
+  } catch(e){ document.getElementById('fsStatusBox').innerHTML = '<div class="callout red">状态加载失败：'+esc(e.message)+'</div>'; }
+}
+async function feishuControl(op){
+  try{
+    const r = await api('/api/feishu/'+op, {method:'POST'});
+    await loadFeishuStatus();
+    if(r.message && r.message!=='已在运行中') {}  // ok
+  } catch(e){ alert('操作失败：'+e.message); await loadFeishuStatus(); }
+}
+
+// ---------- Feishu 模拟器 ----------
+async function loadFeishuExperts(){
+  const r = await api('/api/feishu/experts');
+  const el = document.getElementById('expertCards');
+  if(!r.experts.length){ el.innerHTML = '<span class="muted">暂无可用专家（请在专家配置页新建并设为飞书可见）</span>'; return; }
+  el.innerHTML = r.experts.map(e=>`<span class="chip ${e.id===SELECTED_EXPERT_ID?'on':''}" onclick="selectExpert(${e.id}, '${esc(e.name)}')">${esc(e.name)}<span class="pill" style="margin-left:6px">${esc(e.model.split('/').pop())}</span></span>`).join('');
+  if(!r.experts.find(e=>e.id===SELECTED_EXPERT_ID)){
+    SELECTED_EXPERT_ID = null;
+    document.getElementById('curExpert').textContent = '（未选择）';
+  }
+}
+function selectExpert(id, name){
+  SELECTED_EXPERT_ID = id;
+  document.getElementById('curExpert').innerHTML = `<b>${esc(name)}</b> <span class="pill">#${id}</span>`;
+  document.querySelectorAll('#expertCards .chip').forEach(c=>c.classList.remove('on'));
+  event.target.closest('.chip').classList.add('on');
+}
+async function runTask(){
+  if(!SELECTED_EXPERT_ID){ alert('请先在专家选择卡片中点选一个专家'); return; }
+  const msg = document.getElementById('fmsg').value.trim();
+  if(!msg){ alert('请输入任务内容'); return; }
+  const out = document.getElementById('runResult');
+  out.innerHTML = '<div class="callout amber">路由中：平台 → Hermes 执行引擎（DeepSeek function calling）…</div>';
+  try{
+    const r = await api('/api/feishu/run', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      user_open_id: document.getElementById('fu').value, expert_id: SELECTED_EXPERT_ID, message: msg
+    })});
+    const provTag = r.provider==='deepseek' ? '<span class="tag green">真实 DeepSeek</span>'
+      : (r.provider==='deepseek-error' ? '<span class="tag red">DeepSeek 失败</span>'
+      : '<span class="tag amber">模拟回显</span>');
+    const toolTrace = (r.tool_calls&&r.tool_calls.length)
+      ? '<details open style="margin-top:8px"><summary>工具调用轨迹（'+r.tool_calls.length+' 次）</summary>'
+        + r.tool_calls.map((c,i)=>`<div class="card" style="margin:8px 0;padding:12px 14px">
+            <b>${i+1}. ${esc(c.name)}</b> <span class="muted">参数：</span>
+            <pre style="margin:6px 0">${esc(JSON.stringify(c.args,null,2))}</pre>
+            <span class="muted">返回：</span>
+            <pre style="margin:6px 0">${esc(JSON.stringify(c.result,null,2))}</pre></div>`).join('')
+        + '</details>'
+      : '<div class="muted" style="margin-top:8px">（本次未调用工具，模型直接作答）</div>';
+    out.innerHTML = `
+      <div class="callout teal"><b>执行完成</b> ${provTag}
+        <div class="kv">tokens: ${r.tokens} · latency: ${r.latency_ms}ms · 迭代: ${r.iterations||1} · model: ${esc(r.model||'-')}</div>
+        <div class="kv">skill: ${esc(r.skill_used||'-')} · mcp: ${esc(r.mcp_used||'-')}</div>
+        <div class="kv">profile_dir: <code>${esc(r.profile_dir)}</code></div>
+      </div>
+      <pre>${esc(r.response)}</pre>
+      ${toolTrace}
+      <details><summary>查看本次已加载的 Hermes Profile 文件</summary><div id="profFiles" style="margin-top:8px">加载中…</div></details>`;
+    loadProfileFiles(SELECTED_EXPERT_ID, '#profFiles');
+    document.getElementById('fmsg').value='';
+  } catch(e){ out.innerHTML = `<div class="callout red">失败：${esc(e.message)}</div>`; }
+}
+async function loadProfileFiles(id, sel){
+  try{
+    const r = await api('/api/experts/'+id+'/profile-files');
+    const html = Object.keys(r.files).length===0 ? '<div class="empty">无</div>'
+      : '<div class="files">' + Object.entries(r.files).map(([n,c])=>`<div class="f"><div class="fname">${esc(n)}</div><pre>${esc(c)}</pre></div>`).join('') + '</div>';
+    document.querySelector(sel).innerHTML = html;
+  } catch(e){ document.querySelector(sel).innerHTML = '<div class="empty">加载失败</div>'; }
+}
+
+// ---------- utils ----------
+function val(id){ return document.getElementById(id).value.trim(); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.modal-mask').forEach(m=>m.addEventListener('click', e=>{ if(e.target===m) m.classList.remove('show'); }));
+
+// ---------- init ----------
+async function initAll(){
+  const [s,m,t] = await Promise.all([api('/api/skills'), api('/api/mcp-servers'), api('/api/platform-tools')]);
+  ALL_SKILLS = s; ALL_MCP = m; ALL_TOOLS = t;
+  await Promise.all([loadExperts(), loadSkills(), loadMcp(), loadTools(), loadFeishuExperts(), loadSettings()]);
+}
+
+// 自动登录（有 token 时）
+(async function(){
+  if(!TOKEN){ return; }
+  try{
+    const me = await api('/api/auth/me');
+    document.getElementById('loginBox').style.display='none';
+    document.getElementById('app').style.display='block';
+    document.getElementById('who').style.display='block';
+    document.getElementById('whoName').textContent = me.username;
+    await initAll();
+  } catch(e){ localStorage.removeItem('hp_token'); TOKEN=''; }
+})();
+</script>
+</body>
+</html>

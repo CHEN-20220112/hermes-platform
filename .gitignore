@@ -1,0 +1,8 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 演示运行时产物
+data/
