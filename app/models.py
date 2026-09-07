@@ -59,6 +59,9 @@ class Expert(Base):
     profile_name = Column(String(128), unique=True, nullable=False)  # Hermes Profile
     status = Column(String(16), default="active")  # active / disabled
     feishu_visible = Column(Boolean, default=True)
+    # 模式 B：每个专家独立的飞书 App（在通讯录中作为独立联系人）
+    feishu_app_id = Column(String(128), nullable=True)
+    feishu_app_secret = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=dt.datetime.utcnow)
 
     skills = relationship("Skill", secondary=expert_skill, back_populates="experts")

@@ -203,26 +203,19 @@
       </div>
 
       <div class="card">
-        <h2>飞书接入 · WebSocket 长连接</h2>
-        <div class="lead">填入飞书自建应用的 App ID / Secret，启用后平台将通过 WebSocket 长连接接收消息（无需公网域名）。保存后点「启动连接」或重启服务生效。</div>
+        <h2>飞书接入 · WebSocket 长连接（模式 B：一专家一机器人）</h2>
+        <div class="lead">每个专家绑定独立的飞书自建应用，在通讯录中作为独立联系人出现。在「专家配置」中为专家填入飞书 App ID / Secret 即可。此处仅配置全局开关和白名单。</div>
         <div class="callout teal">
-          <b>接入步骤：</b>① 在 <code>open.feishu.cn/app</code> 创建自建应用 → ②「权限管理」开通 <code>im:message</code>、<code>im:message:send_as_bot</code>、<code>im:chat:readonly</code> →
-          ③「事件订阅」选「长连接」模式，订阅 <code>im.message.receive_v1</code> 与 <code>card.action.trigger</code> → ④「机器人」启用 → ⑤「版本管理与发布」创建版本并发布 → ⑥ 把 App ID/Secret 填入下方保存 → ⑦ 启动连接后在飞书里 @机器人 发「专家」。
+          <b>接入步骤：</b>① 在 <code>open.feishu.cn/app</code> 为每个专家创建自建应用 → ②「权限管理」开通 <code>im:message</code>、<code>im:message:send_as_bot</code>、<code>im:chat:readonly</code> →
+          ③「事件订阅」选「长连接」模式，订阅 <code>im.message.receive_v1</code> → ④「机器人」启用 → ⑤「版本管理与发布」创建版本并发布 → ⑥ 在「专家配置」中为专家填入该应用的 App ID / Secret → ⑦ 此处选「启用」并保存 → ⑧ 点「启动连接」后在飞书里直接 @对应专家机器人发任务。
         </div>
         <div id="feishuSettingsBox">
-          <div class="grid2">
-            <div><label class="muted">App ID</label>
-              <input type="text" id="setFsAppId" placeholder="cli_xxxxxx" autocomplete="off"></div>
-            <div><label class="muted">App Secret</label>
-              <input type="password" id="setFsAppSecret" placeholder="应用 Secret" autocomplete="off"></div>
-          </div>
-          <div class="muted" id="fsSecretHint" style="margin-top:4px;margin-bottom:8px">未配置</div>
           <div class="row"><label>允许的 open_id</label>
             <input type="text" id="setFsUsers" placeholder="留空=允许所有人；多个用逗号分隔">
             <span class="muted">演示用白名单</span></div>
           <div class="row"><label>启用飞书</label>
             <select id="setFsEnabled"><option value="false">关闭</option><option value="true">启用</option></select>
-            <span class="muted">启用后服务启动时自动拉起 WS 长连接</span></div>
+            <span class="muted">启用后服务启动时自动拉起各专家的 WS 长连接</span></div>
           <div class="row" style="justify-content:flex-end">
             <button class="btn" onclick="saveFeishuSettings()">保存飞书设置</button>
           </div>
@@ -287,6 +280,10 @@
       </div>
       <div style="margin-top:8px"><label class="muted">飞书可见</label>
         <select id="exVis"><option value="true">可见</option><option value="false">隐藏</option></select></div>
+      <div class="grid2" style="margin-top:8px">
+        <div><label class="muted">飞书 App ID（独立机器人）</label><input type="text" id="exFeishuAppId" placeholder="cli_xxxx（留空则不启动独立连接）"></div>
+        <div><label class="muted">飞书 App Secret</label><input type="text" id="exFeishuAppSecret" placeholder="留空保持不变"></div>
+      </div>
       <div style="margin-top:10px"><label class="muted">系统提示词（下发到 SOUL.md）</label>
         <textarea id="exSoul" placeholder="你是一名资深数据分析师..."></textarea></div>
       <div style="margin-top:10px"><label class="muted">绑定 Skill</label>
@@ -424,6 +421,8 @@ async function openExpertModal(){
   document.getElementById('exModel').value='deepseek/deepseek-chat';
   document.getElementById('exStatus').value='active';
   document.getElementById('exVis').value='true';
+  document.getElementById('exFeishuAppId').value='';
+  document.getElementById('exFeishuAppSecret').value='';
   document.getElementById('exSoul').value='';
   await renderChips('#exSkills', ALL_SKILLS, []);
   await renderChips('#exMcps', ALL_MCP, []);
@@ -440,6 +439,9 @@ async function editExpert(id){
   document.getElementById('exModel').value=e.model;
   document.getElementById('exStatus').value=e.status;
   document.getElementById('exVis').value=String(e.feishu_visible);
+  document.getElementById('exFeishuAppId').value=e.feishu_app_id||'';
+  document.getElementById('exFeishuAppSecret').value=e.feishu_app_secret||'';
+  document.getElementById('exFeishuAppSecret').placeholder = e.feishu_app_secret_set ? '已配置（脱敏显示，留空保持不变）' : '留空则不启动独立连接';
   document.getElementById('exSoul').value=e.system_prompt||'';
   await renderChips('#exSkills', ALL_SKILLS, e.skill_ids);
   await renderChips('#exMcps', ALL_MCP, e.mcp_ids);
@@ -458,6 +460,8 @@ async function saveExpert(){
     name: val('exName'), profile_name: val('exProfile'), description: val('exDesc'),
     model: val('exModel'), status: val('exStatus'),
     feishu_visible: val('exVis')==='true',
+    feishu_app_id: val('exFeishuAppId'),
+    feishu_app_secret: val('exFeishuAppSecret'),
     system_prompt: val('exSoul'),
     skill_ids: selectedIds('#exSkills'), mcp_ids: selectedIds('#exMcps'),
     platform_tool_ids: selectedIds('#exTools')
@@ -615,11 +619,7 @@ async function loadSettings(){
   document.getElementById('keyHint').textContent = s.deepseek_api_key_set ? ('已配置（'+s.deepseek_api_key+'）。留空保存则不变更。') : '未配置';
   document.getElementById('setUrl').value = s.deepseek_base_url;
   document.getElementById('setModel').value = s.deepseek_default_model;
-  // 飞书
-  document.getElementById('setFsAppId').value = s.feishu_app_id || '';
-  document.getElementById('setFsAppSecret').value = '';
-  document.getElementById('setFsAppSecret').placeholder = s.feishu_app_secret_set ? ('已配置：'+s.feishu_app_secret) : '应用 Secret';
-  document.getElementById('fsSecretHint').textContent = s.feishu_app_secret_set ? ('已配置（'+s.feishu_app_secret+'）。留空保存则不变更。') : '未配置';
+  // 飞书（全局开关和白名单；App 凭证在专家配置中填入）
   document.getElementById('setFsUsers').value = s.feishu_allowed_users || '';
   document.getElementById('setFsEnabled').value = s.feishu_enabled ? 'true' : 'false';
   await loadFeishuStatus();
@@ -646,18 +646,11 @@ async function saveSettings(){
 }
 async function saveFeishuSettings(){
   const body = {
-    feishu_app_id: val('setFsAppId'),
     feishu_allowed_users: val('setFsUsers'),
     feishu_enabled: val('setFsEnabled')==='true',
   };
-  const sec = document.getElementById('setFsAppSecret').value;
-  if(sec) body.feishu_app_secret = sec;  // 留空 = 不变更
   try{
     const s = await api('/api/settings', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    document.getElementById('setFsAppId').value = s.feishu_app_id || '';
-    document.getElementById('setFsAppSecret').value='';
-    document.getElementById('setFsAppSecret').placeholder = s.feishu_app_secret_set ? ('已配置：'+s.feishu_app_secret) : '应用 Secret';
-    document.getElementById('fsSecretHint').textContent = s.feishu_app_secret_set ? ('已配置（'+s.feishu_app_secret+'）。') : '未配置';
     document.getElementById('setFsUsers').value = s.feishu_allowed_users || '';
     document.getElementById('setFsEnabled').value = s.feishu_enabled ? 'true' : 'false';
     await loadFeishuStatus();
@@ -668,17 +661,31 @@ async function loadFeishuStatus(){
   try{
     const st = await api('/api/feishu/status');
     const box = document.getElementById('fsStatusBox');
-    const cfgTag = st.configured ? '<span class="tag green">凭证齐全</span>' : '<span class="tag red">缺少凭证</span>';
     const enTag = st.enabled ? '<span class="tag green">已启用</span>' : '<span class="tag amber">未启用</span>';
     const runTag = st.running ? '<span class="tag green">运行中</span>' : '<span class="tag amber">已停止</span>';
     let html = `<table>
       <tr><th>状态项</th><th>值</th></tr>
-      <tr><td>凭证</td><td>${cfgTag} ${st.app_id?('App ID: <code>'+esc(st.app_id)+'</code>'):'（未填 App ID）'}</td></tr>
       <tr><td>启用开关</td><td>${enTag}</td></tr>
-      <tr><td>WS 连接</td><td>${runTag}</td></tr>
+      <tr><td>连接总数</td><td>${runTag}（${st.connections.length} 个专家）</td></tr>
       <tr><td>最近事件</td><td>${st.last_event_at?esc(st.last_event_at):'<span class="muted">无</span>'}</td></tr>
-      <tr><td>错误</td><td>${st.error?('<span class="tag red">'+esc(st.error)+'</span>'):'<span class="muted">无</span>'}</td></tr>
+      <tr><td>全局错误</td><td>${st.error?('<span class="tag red">'+esc(st.error)+'</span>'):'<span class="muted">无</span>'}</td></tr>
     </table>`;
+    if(st.connections.length){
+      html += '<div style="margin-top:10px"><b>各专家连接</b></div><table><tr><th>专家</th><th>App ID</th><th>状态</th><th>最近事件</th><th>错误</th></tr>';
+      html += st.connections.map(c=>{
+        const r = c.running?'<span class="tag green">运行</span>':'<span class="tag amber">停止</span>';
+        const cfg = c.configured?'<span class="tag green">凭证齐全</span>':'<span class="tag red">缺凭证</span>';
+        return `<tr>
+          <td><b>${esc(c.expert_name)}</b> <span class="muted">#${c.expert_id}</span></td>
+          <td><code>${esc(c.app_id||'-')}</code> ${cfg}</td>
+          <td>${r}</td>
+          <td class="muted">${c.last_event_at?esc(c.last_event_at):'-'}</td>
+          <td>${c.error?('<span class="tag red">'+esc(c.error)+'</span>'):'<span class="muted">-</span>'}</td>
+        </tr>`;
+      }).join('') + '</table>';
+    } else {
+      html += '<div class="muted" style="margin-top:8px">暂无专家配置飞书 App 凭证。在「专家配置」中为专家填入飞书 App ID / Secret。</div>';
+    }
     box.innerHTML = html;
   } catch(e){ document.getElementById('fsStatusBox').innerHTML = '<div class="callout red">状态加载失败：'+esc(e.message)+'</div>'; }
 }

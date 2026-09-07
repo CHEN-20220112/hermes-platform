@@ -10,7 +10,7 @@ import os
 import shutil
 import time
 import datetime as dt
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
     from .models import Expert, Skill, MCPServer
@@ -156,7 +156,12 @@ class HermesExecutor:
     平台只负责路由；真实架构里执行应交给 Hermes，本演示把 Hermes 等效实现放在 agent_loop.py。"""
 
     @staticmethod
-    def run(expert: "Expert", message: str, settings: dict[str, str] | None = None) -> dict:
+    def run(
+        expert: "Expert",
+        message: str,
+        settings: dict[str, str] | None = None,
+        on_progress: Optional[Callable[[dict[str, Any]], None]] = None,
+    ) -> dict:
         pdir = _profile_dir(expert.profile_name)
         # 若 Profile 未下发，先渲染（演示兜底）
         if not os.path.exists(os.path.join(pdir, "SOUL.md")):
@@ -176,6 +181,7 @@ class HermesExecutor:
                     skills=expert.skills,
                     message=message,
                     settings=settings,
+                    on_progress=on_progress,
                 )
                 return {
                     "provider": "deepseek",
@@ -191,6 +197,11 @@ class HermesExecutor:
                 }
             except DeepSeekError as e:
                 # 友好回退：把错误内联返回，不抛 500
+                if on_progress:
+                    try:
+                        on_progress({"type": "final", "response": str(e), "tool_calls": [], "tokens": 0, "latency_ms": 0})
+                    except Exception:
+                        pass
                 return {
                     "provider": "deepseek-error",
                     "response": f"【DeepSeek 调用失败】{e}\n\n请检查「平台设置」中的 API Key / Base URL / 模型是否正确。",
@@ -217,6 +228,11 @@ class HermesExecutor:
             f"任务: {message}\n"
             f"提示: 在「平台设置」填入 DeepSeek API Key 后，本专家将真实调用 DeepSeek 完成任务。"
         )
+        if on_progress:
+            try:
+                on_progress({"type": "final", "response": response, "tool_calls": [], "tokens": 0, "latency_ms": 0})
+            except Exception:
+                pass
         return {
             "provider": "mock",
             "response": response,

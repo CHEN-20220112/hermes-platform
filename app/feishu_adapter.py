@@ -1,17 +1,16 @@
-"""真实飞书适配器（WebSocket 长连接模式）。
+"""真实飞书适配器（WebSocket 长连接 · 模式 B：一专家一机器人）。
 
-职责（对应技术方案 §7）：
-- 与飞书开放平台建立 WebSocket 长连接（无需公网域名/内网穿透，本地即可接收事件）。
-- 收到 `im.message.receive_v1`：解析用户消息 → 路由到所选专家的 Hermes 执行 → 回传结果。
-- 提供「专家选择卡片」（interactive card），按钮回调走 `card.action.trigger` 事件。
-- 会话按 open_id 隔离，记住用户上次选择的专家。
+职责：
+- 每个专家绑定独立的飞书自建应用（App ID / App Secret），在通讯录中
+  作为独立联系人出现。用户直接 @ 对应专家机器人即可，无需选择。
+- 为每个已配置飞书凭证的专家启动一条 WebSocket 长连接。
+- 收到 `im.message.receive_v1`：解析用户消息 → 直接路由到该专家的
+  Hermes 执行 → 回传结果 + 审计。
 - 群聊需 @机器人 才响应；白名单可限制可见用户。
 
-执行链路：飞书消息 → 路由 → HermesExecutor（DeepSeek function calling）→ 回复。
-DeepSeek 调用耗时较长，超过飞书事件 3 秒 ACK 限制，故重活下到线程池异步处理，
-事件处理器立即返回，避免触发超时重推。
-
-飞书 App 接入步骤见 README / 末尾注释。
+执行链路：飞书消息 → 路由到该连接绑定的专家 → HermesExecutor
+（DeepSeek function calling）→ 回复。DeepSeek 调用耗时较长，超过飞书
+事件 3 秒 ACK 限制，故重活下到线程池异步处理，事件处理器立即返回。
 """
 from __future__ import annotations
 
@@ -29,30 +28,25 @@ from lark_oapi.api.im.v1 import (
     CreateMessageRequestBody,
     ReplyMessageRequest,
     ReplyMessageRequestBody,
+    PatchMessageRequest,
+    PatchMessageRequestBody,
+    P2ImMessageReceiveV1,
 )
-from lark_oapi.event.callback.model.p2_card_action_trigger import (
-    P2CardActionTrigger,
-    P2CardActionTriggerResponse,
-)
-from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
 
 from .database import SessionLocal
-from .models import Expert
+from .models import Expert, CallLog
 from .services import HermesExecutor
 from . import settings_store
 
 
 # ====== Monkey-patch: 修复 lark-oapi CARD 帧静默丢弃 bug ======
 # Issue: https://github.com/larksuite/oapi-sdk-python/issues/126
-# lark-oapi <= 1.7.3 的 ws.client._handle_data_frame 对 MessageType.CARD
-# 直接 return，导致 register_p2_card_action_trigger 回调永远不触发。
-# 修复：CARD 帧走和 EVENT 帧相同的分发路径。
+# 保留此补丁以备卡片帧到达时不致静默丢弃。
 def _patch_card_frame_bug():
     import http as _http
     import time as _time
     import base64 as _b64
     import lark_oapi.ws.client as _ws_mod
-    # 这些常量已在 ws.client 模块作用域内，直接引用
     _MessageType = _ws_mod.MessageType
     _Response = _ws_mod.Response
     _JSON = _ws_mod.JSON
@@ -85,15 +79,12 @@ def _patch_card_frame_bug():
             if pl is None:
                 return
         message_type = _MessageType(type_)
-        if message_type == _MessageType.CARD:
-            print(f"[feishu-patch] 收到 CARD 帧, msg_id={msg_id}, trace_id={trace_id}", flush=True)
         _logger.debug(self._fmt_log(
             "receive message, message_type: {}, message_id: {}, trace_id: {}, payload: {}",
             message_type.value, msg_id, trace_id, pl.decode(_UTF_8)))
         resp = _Response(code=_http.HTTPStatus.OK)
         try:
             start = int(round(_time.time() * 1000))
-            # FIX: CARD 帧和 EVENT 帧走相同分发路径（原版 CARD 分支直接 return）
             if message_type in (_MessageType.EVENT, _MessageType.CARD):
                 result = self._event_handler._do_without_validation(pl)
             else:
@@ -117,239 +108,304 @@ def _patch_card_frame_bug():
 _patch_card_frame_bug()
 
 
-class FeishuAdapter:
-    """飞书 WebSocket 长连接适配器（单例）。"""
+class _ExpertConnection:
+    """单个专家的飞书 WS 连接上下文。"""
 
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._thread: Optional[threading.Thread] = None
-        self._ws_client = None
-        self._api_client: Optional[lark.Client] = None
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="feishu-run")
-        # 会话记忆：open_id -> expert_id（演示用内存；生产应入 session 表 / Redis）
-        self._sessions: dict[str, int] = {}
-        self._sessions_lock = threading.Lock()
-        # 状态
+    def __init__(self, expert_id: int, expert_name: str, app_id: str, app_secret: str):
+        self.expert_id = expert_id
+        self.expert_name = expert_name
+        self.app_id = app_id
+        self.app_secret = app_secret
+        self.ws_client = None
+        self.api_client: Optional[lark.Client] = None
         self.running = False
         self.error = ""
         self.last_event_at: Optional[str] = None
-        self._creds: dict = {}
+
+
+class FeishuAdapter:
+    """飞书 WebSocket 长连接适配器（模式 B：一专家一机器人）。
+
+    为每个配置了飞书 App 凭证的专家启动独立 WS 连接，消息直接路由到
+    绑定的专家，无需选择卡片。
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=8, thread_name_prefix="feishu-run")
+        self._connections: dict[int, _ExpertConnection] = {}
+        self._allowed_users: str = ""
+        self.error = ""
+        # 所有 WS 客户端共享一个事件循环 / 一个后台线程
+        self._ws_thread: Optional[threading.Thread] = None
 
     # ---------------- 生命周期 ----------------
     def start(self) -> str:
-        """读取当前配置并启动 WS 长连接（后台线程）。"""
+        """加载所有已配置飞书凭证的专家，构建 WS 客户端并在共享循环中启动。"""
         with self._lock:
-            if self.running:
-                return "已在运行中"
             db = SessionLocal()
             try:
                 s = settings_store.load(db)
+                enabled = str(s.get("feishu_enabled", "false")).lower() == "true"
+                self._allowed_users = s.get("feishu_allowed_users", "")
+                if not enabled:
+                    return "飞书未启用（设置中 feishu_enabled=false）"
+                experts = (
+                    db.query(Expert)
+                    .filter(Expert.feishu_app_id.isnot(None),
+                            Expert.feishu_app_secret.isnot(None),
+                            Expert.status == "active")
+                    .all()
+                )
             finally:
                 db.close()
-            app_id = (s.get("feishu_app_id") or "").strip()
-            app_secret = (s.get("feishu_app_secret") or "").strip()
-            enabled = str(s.get("feishu_enabled", "false")).lower() == "true"
-            self._creds = {"allowed_users": s.get("feishu_allowed_users", "")}
-            if not enabled:
-                return "飞书未启用（设置中 feishu_enabled=false）"
-            if not app_id or not app_secret:
-                self.error = "缺少 App ID 或 App Secret"
+
+            if not experts:
+                self.error = "没有专家配置飞书 App 凭证"
                 return self.error
+
+            new_conns: list[_ExpertConnection] = []
+            for e in experts:
+                app_id = (e.feishu_app_id or "").strip()
+                app_secret = (e.feishu_app_secret or "").strip()
+                if not app_id or not app_secret:
+                    continue
+                # 已在运行则跳过
+                existing = self._connections.get(e.id)
+                if existing and existing.running:
+                    continue
+                conn = _ExpertConnection(e.id, e.name, app_id, app_secret)
+                self._connections[e.id] = conn
+                self._build_client(conn)
+                new_conns.append(conn)
+
+            if not new_conns:
+                self.error = "所有专家连接已在运行或凭证不完整"
+                return self.error
+
+            # 把新连接的客户端交给共享 WS 线程统一驱动
+            self._ensure_ws_thread(new_conns)
+
             self.error = ""
-            self._api_client = lark.Client.builder().app_id(app_id).app_secret(app_secret).build()
-            handler = (
-                lark.EventDispatcherHandler.builder("", "")
-                .register_p2_im_message_receive_v1(self._on_message)
-                .register_p2_card_action_trigger(self._on_card_action)
-                .build()
-            )
-            self._ws_client = lark.ws.Client(
-                app_id, app_secret,
-                event_handler=handler,
-                log_level=lark.LogLevel.DEBUG,
-                auto_reconnect=True,
-            )
-            self._thread = threading.Thread(target=self._run, name="feishu-ws", daemon=True)
-            self.running = True
-            self._thread.start()
-            return "启动中"
+            return f"已启动 {len(new_conns)} 个专家连接"
 
-    def _run(self):
-        """daemon 线程入口：为 SDK 建立独立事件循环后启动 WS 长连接。
+    def _build_client(self, conn: _ExpertConnection):
+        """为单个专家构建 api_client / ws_client（不启动线程）。"""
+        conn.api_client = (
+            lark.Client.builder()
+            .app_id(conn.app_id).app_secret(conn.app_secret).build()
+        )
 
-        lark-oapi 的 ws.client 模块在 import 时用 asyncio.get_event_loop()
-        捕获了一个全局 loop。FastAPI/uvicorn 在主线程跑 asyncio，该 loop
-        已在运行，daemon 线程里再 loop.run_until_complete() 就会抛
-        'This event loop is already running'。
-        修复：在 daemon 线程里新建一个事件循环，覆盖 SDK 的全局 loop。
+        def _msg_handler(data: P2ImMessageReceiveV1) -> None:
+            self._on_message(conn, data)
+
+        handler = (
+            lark.EventDispatcherHandler.builder("", "")
+            .register_p2_im_message_receive_v1(_msg_handler)
+            .build()
+        )
+        conn.ws_client = lark.ws.Client(
+            conn.app_id, conn.app_secret,
+            event_handler=handler,
+            log_level=lark.LogLevel.DEBUG,
+            auto_reconnect=True,
+        )
+        conn.running = True
+
+    def _ensure_ws_thread(self, new_conns: list[_ExpertConnection]):
+        """确保共享 WS 线程在运行，并把新客户端挂上去。
+
+        关键：lark_oapi.ws.client 模块有一个全局 `loop` 变量，所有 Client
+        内部方法（_connect / _receive_message_loop / _ping_loop 等）都引用它。
+        若每个 client 各开一个线程各设一个 loop，会互相覆盖全局 loop，导致
+        "Future attached to a different loop"。
+        修复：所有 client 共享一个事件循环 + 一个后台线程，全局 loop 只设一次。
         """
         import asyncio
-        import lark_oapi.ws.client as ws_mod
-        try:
-            new_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(new_loop)
-            ws_mod.loop = new_loop  # 覆盖 SDK 模块级全局 loop
-            self._ws_client.start()
-        except Exception as e:  # noqa: BLE001
-            self.running = False
-            self.error = f"WS 连接异常: {e}"
+
+        def _run_all():
+            import lark_oapi.ws.client as ws_mod
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            ws_mod.loop = loop  # 全局只设一次
+            try:
+                # 把当前所有连接的 client 都 connect 到同一个 loop
+                for c in list(self._connections.values()):
+                    if c.ws_client is None:
+                        continue
+                    try:
+                        loop.run_until_complete(c.ws_client._connect())
+                        loop.create_task(c.ws_client._ping_loop())
+                    except Exception as e:  # noqa: BLE001
+                        c.running = False
+                        c.error = f"WS 连接异常: {e}"
+                loop.run_forever()
+            except Exception as e:  # noqa: BLE001
+                for c in self._connections.values():
+                    c.running = False
+                    c.error = f"WS 共享循环异常: {e}"
+
+        if self._ws_thread is None or not self._ws_thread.is_alive():
+            self._ws_thread = threading.Thread(
+                target=_run_all, name="feishu-ws-shared", daemon=True)
+            self._ws_thread.start()
+        else:
+            # 线程已在跑：把新 client 也 connect 到现有 loop
+            # （需要在 loop 线程里执行，用 run_coroutine_threadsafe）
+            import lark_oapi.ws.client as ws_mod
+            loop = ws_mod.loop
+
+            async def _connect_new():
+                for c in new_conns:
+                    if c.ws_client is None:
+                        continue
+                    try:
+                        await c.ws_client._connect()
+                        loop.create_task(c.ws_client._ping_loop())
+                    except Exception as e:  # noqa: BLE001
+                        c.running = False
+                        c.error = f"WS 连接异常: {e}"
+
+            asyncio.run_coroutine_threadsafe(_connect_new(), loop)
 
     def stop(self) -> str:
-        """尽力停止：标记不可用。WS 线程为 daemon，无法硬终止；改凭证需重启服务。"""
+        """停止所有连接（daemon 线程无法硬终止，标记不可用）。"""
         with self._lock:
-            self.running = False
-            self.error = "已手动停止（WS 线程为 daemon，可能仍存活至下次重连失败）"
-            return "已停止"
+            for conn in self._connections.values():
+                conn.running = False
+                conn.error = "已手动停止"
+            return f"已停止 {len(self._connections)} 个连接"
 
     def restart(self) -> str:
         self.stop()
         time.sleep(0.5)
+        # 清理旧连接引用，start 会重建
+        self._connections.clear()
+        # 共享 WS 线程为 daemon 无法硬终止，重置引用让 start 新建一个 loop
+        self._ws_thread = None
         return self.start()
 
     def status(self) -> dict:
+        conns = []
+        any_running = False
+        last_event = None
+        for conn in self._connections.values():
+            if conn.running:
+                any_running = True
+            if conn.last_event_at:
+                if not last_event or conn.last_event_at > last_event:
+                    last_event = conn.last_event_at
+            conns.append({
+                "expert_id": conn.expert_id,
+                "expert_name": conn.expert_name,
+                "app_id": settings_store.mask_key(conn.app_id) if conn.app_id else "",
+                "configured": bool(conn.app_id and conn.app_secret),
+                "running": conn.running,
+                "error": conn.error,
+                "last_event_at": conn.last_event_at,
+            })
         db = SessionLocal()
         try:
             s = settings_store.load(db)
+            enabled = str(s.get("feishu_enabled", "false")).lower() == "true"
         finally:
             db.close()
-        app_id = (s.get("feishu_app_id") or "").strip()
-        app_secret = (s.get("feishu_app_secret") or "").strip()
         return {
-            "configured": bool(app_id and app_secret),
-            "enabled": str(s.get("feishu_enabled", "false")).lower() == "true",
-            "running": self.running,
-            "app_id": settings_store.mask_key(app_id) if app_id else "",
+            "enabled": enabled,
+            "running": any_running,
+            "connections": conns,
             "error": self.error,
-            "last_event_at": self.last_event_at,
+            "last_event_at": last_event,
         }
 
     # ---------------- 事件处理 ----------------
-    def _on_message(self, data: P2ImMessageReceiveV1) -> None:
-        """接收消息事件。立即 ACK，重活下到线程池。"""
-        self.last_event_at = dt.datetime.now().isoformat(timespec="seconds")
+    def _on_message(self, conn: _ExpertConnection, data: P2ImMessageReceiveV1) -> None:
+        """接收消息事件 → 直接路由到该连接绑定的专家。立即 ACK，重活下到线程池。"""
+        conn.last_event_at = dt.datetime.now().isoformat(timespec="seconds")
         try:
             msg = data.event.message
             sender_open_id = data.event.sender.sender_id.open_id
-            chat_type = msg.chat_type            # p2p / group
+            chat_type = msg.chat_type
             msg_type = msg.message_type
             message_id = msg.message_id
-            chat_id = msg.chat_id
             mentions = getattr(msg, "mentions", None) or []
 
             # 白名单
-            allowed = self._creds.get("allowed_users", "")
-            if allowed:
-                allowed_set = {x.strip() for x in allowed.split(",") if x.strip()}
+            if self._allowed_users:
+                allowed_set = {x.strip() for x in self._allowed_users.split(",") if x.strip()}
                 if sender_open_id not in allowed_set:
                     return
 
-            # 群聊必须 @ 机器人（提及列表非空）；单聊直接处理
+            # 群聊必须 @机器人
             if chat_type == "group" and not mentions:
                 return
 
             if msg_type != "text":
-                self._reply(message_id, "目前仅支持文本消息。发送「专家」查看可用专家。")
+                self._reply(conn, message_id, "目前仅支持文本消息，请直接发送任务。")
                 return
 
             try:
                 text = json.loads(msg.content).get("text", "")
             except Exception:
                 text = ""
-            text = text.strip()
-            # 去掉群聊 @机器人 的占位符（@_user_1 等）
             text = re.sub(r"@_user_\d+", "", text).strip()
+            if not text:
+                return
 
-            self._executor.submit(self._handle_text, sender_open_id, chat_type, message_id, chat_id, text)
+            self._executor.submit(self._run_and_reply, conn, text, message_id, sender_open_id)
         except Exception as e:  # noqa: BLE001
-            self.error = f"消息处理异常: {e}"
-
-    def _handle_text(self, open_id: str, chat_type: str, message_id: str, chat_id: str, text: str):
-        """在后台线程执行：路由 → 调用专家 → 回复。"""
-        try:
-            # 路由解析
-            # 1) 触发专家选择卡片 + 文本列表
-            if text in {"专家", "选专家", "专家列表", "切换专家", "切换", "help", "帮助", "?"}:
-                self._send_expert_selector(chat_type, chat_id, open_id, message_id)
-                return
-            # 2) 纯数字 = 按编号选专家（卡片按钮的文本兜底）
-            if re.match(r"^\d+$", text):
-                expert = self._find_expert(text)
-                if expert:
-                    self._set_session(open_id, expert.id)
-                    self._reply(message_id, f"已选择专家：{expert.name}\n现在发送任务即可，"
-                                             f"或用「用 {expert.name}：你的任务」直接执行。")
-                    return
-            # 3) 指令路由：用 <专家名|编号> : <任务>
-            m = re.match(r"^用\s*(.+?)[：:]\s+(.+)$", text)
-            if m:
-                key, task = m.group(1).strip(), m.group(2).strip()
-                expert = self._find_expert(key)
-                if not expert:
-                    self._reply(message_id, f"未找到专家「{key}」。发送「专家」查看列表。")
-                    return
-                self._set_session(open_id, expert.id)
-                self._run_and_reply(expert, task, message_id, open_id)
-                return
-            # 4) 凭会话记忆执行
-            expert_id = self._get_session(open_id)
-            if not expert_id:
-                self._send_expert_selector(chat_type, chat_id, open_id, message_id,
-                                           hint="请先选择专家，再发送任务。")
-                return
-            expert = self._load_expert(expert_id)
-            if not expert or expert.status != "active" or not expert.feishu_visible:
-                self._clear_session(open_id)
-                self._send_expert_selector(chat_type, chat_id, open_id, message_id,
-                                           hint="你选的专家已下线，请重新选择。")
-                return
-            self._run_and_reply(expert, text, message_id, open_id)
-        except Exception as e:  # noqa: BLE001
-            try:
-                self._reply(message_id, f"处理失败：{e}")
-            except Exception:
-                pass
-
-    def _on_card_action(self, data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
-        """专家选择卡片按钮回调。"""
-        self.last_event_at = dt.datetime.now().isoformat(timespec="seconds")
-        print(f"[feishu] _on_card_action 被触发", flush=True)
-        try:
-            action = data.event.action
-            value = (action.value if action else {}) or {}
-            op_open_id = data.event.operator.open_id if data.event.operator else ""
-            expert_id = int(value.get("expert_id", 0))
-            name = self._expert_name(expert_id)
-            print(f"[feishu] card action: expert_id={expert_id}, name={name}, open_id={op_open_id}", flush=True)
-            if expert_id and name:
-                self._set_session(op_open_id, expert_id)
-                toast = {"type": "success", "content": f"已选择：{name}\n现在发送任务即可"}
-            else:
-                toast = {"type": "error", "content": "选择失败：专家不存在"}
-            resp = P2CardActionTriggerResponse()
-            resp.toast = toast
-            return resp
-        except Exception as e:  # noqa: BLE001
-            import traceback
-            print(f"[feishu] _on_card_action 异常: {e}\n{traceback.format_exc()}", flush=True)
-            self.error = f"卡片回调异常: {e}"
-            return P2CardActionTriggerResponse()
+            conn.error = f"消息处理异常: {e}"
 
     # ---------------- 执行 ----------------
-    def _run_and_reply(self, expert, task: str, message_id: str, open_id: str):
+    def _run_and_reply(self, conn: _ExpertConnection, task: str, message_id: str, open_id: str):
+        """在后台线程执行：加载专家 → 调用 HermesExecutor → 回传 + 审计。
+
+        实时展示推理过程：发送一张进度卡片，随 Agent 循环逐步更新
+        （迭代开始 / 工具调用 / 工具返回 / 最终答复），让用户像使用
+        其他 Agent 一样看到思考与工具调用链路。
+        """
         db = SessionLocal()
         try:
             settings = settings_store.load(db)
-            # 用当前 session 重新加载 Expert，避免 detached instance 错误
-            # （expert 是在别的已关闭 session 里加载的，skills/mcp_servers 等懒加载属性无法访问）
-            expert = db.get(Expert, expert.id)
-            if not expert or expert.status != "active" or not expert.feishu_visible:
-                self._reply(message_id, "专家已下线或不可用，请重新选择。")
+            expert = db.get(Expert, conn.expert_id)
+            if not expert or expert.status != "active":
+                self._reply(conn, message_id, "该专家已下线，请联系管理员。")
                 return
-            # 触发前回执（typing 提示）
-            self._reply(message_id, f"已收到，{expert.name} 正在处理…")
-            result = HermesExecutor.run(expert, task, settings=settings)
-            # 审计入库
-            from .models import CallLog
+
+            # 1) 发送进度卡片，拿到 card_message_id 用于后续 PATCH 更新
+            card_msg_id = self._send_progress_card(
+                conn, message_id, expert.name,
+                lines=["🔄 正在分析任务，准备调用工具…"],
+            )
+
+            # 2) 构建进度回调：累积步骤并实时 PATCH 卡片
+            trace_lines: list[str] = []
+            tool_count = [0]
+
+            def on_progress(step: dict) -> None:
+                t = step.get("type")
+                if t == "iter_start":
+                    trace_lines.append(f"🧠 第 {step['iteration']} 轮推理（{step.get('model', '')}）…")
+                elif t == "tool_call":
+                    tool_count[0] += 1
+                    name = step.get("name", "")
+                    args = step.get("args", {})
+                    args_str = self._truncate(json.dumps(args, ensure_ascii=False), 120)
+                    trace_lines.append(f"🔧 [{tool_count[0]}] 调用工具 `{name}`\n   参数: {args_str}")
+                elif t == "tool_result":
+                    name = step.get("name", "")
+                    result = step.get("result")
+                    result_str = self._truncate(json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result, 200)
+                    trace_lines.append(f"   ↳ 返回: {result_str}")
+                # 实时刷新卡片（final 由 _send_result 统一处理最终态）
+                if card_msg_id and t != "final":
+                    self._patch_card(conn, card_msg_id, expert.name, trace_lines, done=False)
+
+            # 3) 执行（进度回调会实时更新卡片）
+            result = HermesExecutor.run(expert, task, settings=settings, on_progress=on_progress)
+
+            # 4) 审计入库
             log = CallLog(
                 expert_id=expert.id, user_open_id=open_id, channel="feishu",
                 message=task, response=result["response"],
@@ -359,149 +415,182 @@ class FeishuAdapter:
             )
             db.add(log)
             db.commit()
-            self._send_result(message_id, expert, result)
+
+            # 5) 把最终结果（含完整工具/Skill 链路）PATCH 到卡片
+            self._send_result(conn, card_msg_id, message_id, expert, result, trace_lines)
+        except Exception as e:  # noqa: BLE001
+            try:
+                self._reply(conn, message_id, f"处理失败：{e}")
+            except Exception:
+                pass
         finally:
             db.close()
 
     # ---------------- 回复发送 ----------------
-    def _reply(self, message_id: str, text: str):
-        """回复某条消息（带引用）。"""
-        self._reply_raw(message_id, "text", json.dumps({"text": text}, ensure_ascii=False))
-
-    def _reply_raw(self, message_id: str, msg_type: str, content: str):
-        """回复某条消息，支持 text/interactive 等类型。"""
+    def _reply(self, conn: _ExpertConnection, message_id: str, text: str) -> Optional[str]:
+        """用该专家的 api_client 回复消息，返回新消息的 message_id（失败返回 None）。"""
         req = (
             ReplyMessageRequest.builder()
             .message_id(message_id)
             .request_body(
                 ReplyMessageRequestBody.builder()
-                .msg_type(msg_type)
-                .content(content)
+                .msg_type("text")
+                .content(json.dumps({"text": text}, ensure_ascii=False))
                 .build()
             ).build()
         )
-        resp = self._api_client.im.v1.message.reply(req)
+        resp = conn.api_client.im.v1.message.reply(req)
         if not resp.success():
-            self.error = f"reply({msg_type}) 失败: code={resp.code} msg={resp.msg}"
-            print(f"[feishu] reply({msg_type}) 失败: code={resp.code} msg={resp.msg}", flush=True)
+            conn.error = f"reply 失败: code={resp.code} msg={resp.msg}"
+            return None
+        return getattr(resp.data, "message_id", None)
 
-    def _send(self, chat_id: str, open_id: str, msg_type: str, content: str):
-        """主动发消息：单聊用 open_id，群聊用 chat_id。"""
-        if chat_id and not open_id:
-            rid_type, rid = "chat_id", chat_id
-        else:
-            rid_type, rid = "open_id", open_id
+    def _reply_card(self, conn: _ExpertConnection, message_id: str, card: dict) -> Optional[str]:
+        """回复一条交互卡片，返回新消息的 message_id。"""
+        content = json.dumps(card, ensure_ascii=False)
         req = (
-            CreateMessageRequest.builder()
-            .receive_id_type(rid_type)
+            ReplyMessageRequest.builder()
+            .message_id(message_id)
             .request_body(
-                CreateMessageRequestBody.builder()
-                .receive_id(rid)
-                .msg_type(msg_type)
+                ReplyMessageRequestBody.builder()
+                .msg_type("interactive")
                 .content(content)
                 .build()
             ).build()
         )
-        resp = self._api_client.im.v1.message.create(req)
+        resp = conn.api_client.im.v1.message.reply(req)
         if not resp.success():
-            self.error = f"create({msg_type}) 失败: code={resp.code} msg={resp.msg}"
+            conn.error = f"reply card 失败: code={resp.code} msg={resp.msg}"
+            print(f"[feishu] reply card 失败: code={resp.code} msg={resp.msg}", flush=True)
+            return None
+        return getattr(resp.data, "message_id", None)
 
-    def _send_result(self, message_id: str, expert, result: dict):
-        """把执行结果回传：用回复消息（带引用）发文本结果。"""
-        prov = result.get("provider", "mock")
-        tag = {"deepseek": "真实 DeepSeek", "mock": "模拟回显", "deepseek-error": "DeepSeek 失败"}.get(prov, prov)
-        meta = f"[{tag}] 模型={result.get('model') or expert.model} tokens={result['tokens']} latency={result['latency_ms']}ms"
-        body = f"{meta}\n\n{result['response']}"
-        # 飞书单条文本上限较大，超长则分段
-        MAX = 3800
-        if len(body) <= MAX:
-            self._reply(message_id, body)
-        else:
-            self._reply(message_id, body[:MAX] + "\n\n（续见下条）")
-            rest = body[MAX:]
-            for i in range(0, len(rest), MAX):
-                self._reply(message_id, rest[i:i + MAX])
-
-    def _send_expert_selector(self, chat_type: str, chat_id: str, open_id: str, message_id: str, hint: str = "请选择一个专家："):
-        """发送专家选择交互卡片 + 文本编号列表（双通道：卡片按钮 + 文本数字选择）。"""
-        db = SessionLocal()
-        try:
-            qs = (db.query(Expert)
-                  .filter(Expert.feishu_visible.is_(True), Expert.status == "active")
-                  .order_by(Expert.id.asc()).all())
-        finally:
-            db.close()
-        if not qs:
-            self._reply(message_id, "暂无可用专家。请联系管理员在后台配置。")
+    def _patch_card(self, conn: _ExpertConnection, card_msg_id: str, expert_name: str,
+                    lines: list[str], done: bool = False, response: str = "",
+                    meta: str = "", skill_used: str = "", mcp_used: str = "",
+                    tool_calls: list | None = None) -> None:
+        """PATCH 更新一张交互卡片的内容（实时进度 / 最终结果）。"""
+        if not card_msg_id:
             return
-        # 先发一条文本编号列表（不依赖卡片回调，兜底可用）
-        lines = [hint, ""]
-        for i, e in enumerate(qs, 1):
-            lines.append(f"  {i}. {e.name}（#{e.id}）")
-        lines.append("")
-        lines.append("👉 点击下方卡片按钮，或直接回复数字（如 1）选择专家")
-        lines.append("👉 或发送：用 <专家名>：<任务> 一步到位")
-        self._reply(message_id, "\n".join(lines))
-        # 再发交互卡片（用 reply 通道发送，和文本回复走同一路径，兼容性最佳）
-        actions = []
-        for e in qs:
-            actions.append({
-                "tag": "button",
-                "text": {"tag": "plain_text", "content": e.name},
-                "type": "primary",
-                "value": {"action": "select", "expert_id": e.id},
-            })
+        if done:
+            template = "green"
+            title = f"✅ {expert_name} 已完成"
+        else:
+            template = "blue"
+            title = f"🤖 {expert_name} 思考中…"
+
+        elements: list[dict] = []
+        # 进度/追踪区
+        if lines:
+            trace_text = "\n".join(lines)
+            elements.append({"tag": "markdown", "content": trace_text})
+
+        if done:
+            # 元信息
+            if meta:
+                elements.append({"tag": "hr"})
+                elements.append({"tag": "markdown", "content": f"**📊 执行信息**\n{meta}"})
+            # 已加载 Skill / MCP
+            if skill_used or mcp_used:
+                skills_text = f"**🧩 已加载 Skill**\n{skill_used or '(无)'}"
+                mcp_text = f"**🔌 已加载 MCP**\n{mcp_used or '(无)'}"
+                elements.append({"tag": "markdown", "content": f"{skills_text}\n\n{mcp_text}"})
+            # 完整工具调用链路（带参数与返回）
+            if tool_calls:
+                tc_lines = ["**🛠 工具调用链路**"]
+                for i, tc in enumerate(tool_calls, 1):
+                    name = tc.get("name", "")
+                    args = tc.get("args", {})
+                    result = tc.get("result")
+                    args_str = self._truncate(json.dumps(args, ensure_ascii=False), 300)
+                    result_str = self._truncate(
+                        json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result, 400
+                    )
+                    tc_lines.append(f"`{i}. {name}`")
+                    tc_lines.append(f"   参数: `{args_str}`")
+                    tc_lines.append(f"   返回: `{result_str}`")
+                elements.append({"tag": "markdown", "content": "\n".join(tc_lines)})
+            # 最终答复
+            elements.append({"tag": "hr"})
+            elements.append({"tag": "markdown", "content": f"**💬 最终答复**\n{response}"})
+
         card = {
             "config": {"wide_screen_mode": True},
-            "header": {"title": {"tag": "plain_text", "content": "选择专家"}, "template": "blue"},
-            "elements": [
-                {"tag": "action", "actions": actions},
-            ],
+            "header": {"title": {"tag": "plain_text", "content": title}, "template": template},
+            "elements": elements,
         }
         content = json.dumps(card, ensure_ascii=False)
-        self._reply_raw(message_id, "interactive", content)
+        self._patch_message(conn, card_msg_id, content)
 
-    # ---------------- 会话 / 专家查询 ----------------
-    def _set_session(self, open_id: str, expert_id: int):
-        with self._sessions_lock:
-            self._sessions[open_id] = expert_id
+    def _patch_message(self, conn: _ExpertConnection, message_id: str, content: str) -> None:
+        """PATCH 更新一条消息的 content（用于实时刷新进度卡片）。"""
+        req = (
+            PatchMessageRequest.builder()
+            .message_id(message_id)
+            .request_body(
+                PatchMessageRequestBody.builder()
+                .content(content)
+                .build()
+            ).build()
+        )
+        resp = conn.api_client.im.v1.message.patch(req)
+        if not resp.success():
+            conn.error = f"patch 失败: code={resp.code} msg={resp.msg}"
 
-    def _get_session(self, open_id: str) -> Optional[int]:
-        with self._sessions_lock:
-            return self._sessions.get(open_id)
+    @staticmethod
+    def _truncate(s: str, max_len: int) -> str:
+        s = s.replace("\n", " ")
+        return s if len(s) <= max_len else s[:max_len] + "…"
 
-    def _clear_session(self, open_id: str):
-        with self._sessions_lock:
-            self._sessions.pop(open_id, None)
+    def _send_progress_card(self, conn: _ExpertConnection, message_id: str, expert_name: str,
+                            lines: list[str]) -> Optional[str]:
+        """发送初始进度卡片，返回其 message_id（用于后续 PATCH）。"""
+        card = {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": f"🤖 {expert_name} 思考中…"},
+                "template": "blue",
+            },
+            "elements": [
+                {"tag": "markdown", "content": "\n".join(lines)},
+            ],
+        }
+        return self._reply_card(conn, message_id, card)
 
-    def _find_expert(self, key: str) -> Optional[Expert]:
-        db = SessionLocal()
-        try:
-            # 编号
-            if key.isdigit():
-                e = db.get(Expert, int(key))
-                if e and e.feishu_visible and e.status == "active":
-                    return e
-                return None
-            # 名称包含匹配
-            q = db.query(Expert).filter(Expert.feishu_visible.is_(True), Expert.status == "active")
-            for e in q:
-                if key in e.name or e.name in key:
-                    return e
-            return q.filter(Expert.name == key).first()
-        finally:
-            db.close()
+    def _send_result(self, conn: _ExpertConnection, card_msg_id: Optional[str],
+                     message_id: str, expert, result: dict, trace_lines: list[str]):
+        """回传执行结果：优先 PATCH 进度卡片展示完整链路；超长则额外补发文本。"""
+        prov = result.get("provider", "mock")
+        tag = {"deepseek": "真实 DeepSeek", "mock": "模拟回显",
+               "deepseek-error": "DeepSeek 失败"}.get(prov, prov)
+        meta = (f"[{tag}] 模型={result.get('model') or expert.model} "
+                f"tokens={result['tokens']} latency={result['latency_ms']}ms")
+        tool_calls = result.get("tool_calls", [])
 
-    def _load_expert(self, expert_id: int) -> Optional[Expert]:
-        db = SessionLocal()
-        try:
-            return db.get(Expert, expert_id)
-        finally:
-            db.close()
+        # 1) 把最终结果 PATCH 到进度卡片（含完整工具/Skill 链路）
+        if card_msg_id:
+            self._patch_card(
+                conn, card_msg_id, expert.name, trace_lines,
+                done=True,
+                response=result["response"],
+                meta=meta,
+                skill_used=result.get("skill_used", ""),
+                mcp_used=result.get("mcp_used", ""),
+                tool_calls=tool_calls,
+            )
 
-    def _expert_name(self, expert_id: int) -> str:
-        e = self._load_expert(expert_id)
-        return e.name if e else ""
+        # 2) 若最终答复过长，卡片放不下，则另外补发一条文本（带引用）
+        response = result["response"]
+        if len(response) > 2000:
+            MAX = 3800
+            body = f"{meta}\n\n{response}"
+            if len(body) <= MAX:
+                self._reply(conn, message_id, body)
+            else:
+                self._reply(conn, message_id, body[:MAX] + "\n\n（续见下条）")
+                rest = body[MAX:]
+                for i in range(0, len(rest), MAX):
+                    self._reply(conn, message_id, rest[i:i + MAX])
 
 
 # 单例
@@ -515,14 +604,3 @@ def get_adapter() -> FeishuAdapter:
         if _adapter is None:
             _adapter = FeishuAdapter()
         return _adapter
-
-
-# ====== 飞书 App 接入步骤（管理员在开放平台操作） ======
-# 1. https://open.feishu.cn/app 创建「企业自建应用」，拿到 App ID / App Secret。
-# 2. 「权限管理」开通：im:message（读消息）、im:message:send_as_bot（发消息）、im:chat:readonly。
-# 3. 「事件订阅」选择「长连接（WebSocket）」模式（无需公网回调 URL）。
-#    订阅事件：im.message.receive_v1（接收消息）、card.action.trigger（卡片按钮回调）。
-# 4. 「机器人」配置：启用机器人，可设头像/名称。
-# 5. 「版本管理与发布」创建版本并发布（自建应用需发布后事件才生效）。
-# 6. 把 App ID / App Secret 填入本平台「平台设置」→ 保存 → 重启服务（或点「启动连接」）。
-# 7. 在飞书里把机器人加入群聊（@机器人），或直接私聊机器人；发「专家」选专家，发任务即可。

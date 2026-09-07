@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..auth import require_admin
 from ..models import Expert, CallLog, FeishuApp
-from ..schemas import FeishuRunIn, FeishuRunOut, FeishuSelectOut, ExpertOut, ToolCallTrace, FeishuStatusOut
+from ..schemas import FeishuRunIn, FeishuRunOut, FeishuSelectOut, ExpertOut, ToolCallTrace, FeishuStatusOut, ExpertConnStatus
 from ..services import HermesExecutor
 from .. import settings_store
 from ..feishu_adapter import get_adapter
@@ -92,25 +92,35 @@ def seed_app(db: Session = Depends(get_db)):
     return db.query(FeishuApp).all()
 
 
-# ---------- 真实飞书连接控制 ----------
+# ---------- 真实飞书连接控制（模式 B：每专家独立连接） ----------
 @router.get("/status", response_model=FeishuStatusOut, dependencies=[Depends(require_admin)])
 def feishu_status():
-    return FeishuStatusOut(**get_adapter().status())
+    s = get_adapter().status()
+    return FeishuStatusOut(
+        enabled=s["enabled"],
+        running=s["running"],
+        connections=[ExpertConnStatus(**c) for c in s["connections"]],
+        error=s["error"],
+        last_event_at=s["last_event_at"],
+    )
 
 
 @router.post("/start", dependencies=[Depends(require_admin)])
 def feishu_start():
     msg = get_adapter().start()
-    return {"ok": msg != "已在运行中" or True, "message": msg, "status": get_adapter().status()}
+    s = get_adapter().status()
+    return {"ok": True, "message": msg, "status": s}
 
 
 @router.post("/stop", dependencies=[Depends(require_admin)])
 def feishu_stop():
     msg = get_adapter().stop()
-    return {"ok": True, "message": msg, "status": get_adapter().status()}
+    s = get_adapter().status()
+    return {"ok": True, "message": msg, "status": s}
 
 
 @router.post("/restart", dependencies=[Depends(require_admin)])
 def feishu_restart():
     msg = get_adapter().restart()
-    return {"ok": True, "message": msg, "status": get_adapter().status()}
+    s = get_adapter().status()
+    return {"ok": True, "message": msg, "status": s}

@@ -13,6 +13,8 @@ router = APIRouter(prefix="/api/experts", tags=["experts"])
 
 
 def _to_out(expert: Expert) -> ExpertOut:
+    from .. import settings_store
+    secret = expert.feishu_app_secret or ""
     return ExpertOut(
         id=expert.id,
         name=expert.name,
@@ -22,6 +24,9 @@ def _to_out(expert: Expert) -> ExpertOut:
         profile_name=expert.profile_name,
         status=expert.status,
         feishu_visible=expert.feishu_visible,
+        feishu_app_id=expert.feishu_app_id or "",
+        feishu_app_secret=settings_store.mask_key(secret) if secret else "",
+        feishu_app_secret_set=bool(secret),
         skill_ids=[s.id for s in expert.skills],
         mcp_ids=[m.id for m in expert.mcp_servers],
         platform_tool_ids=[t.id for t in expert.platform_tools],
@@ -58,6 +63,8 @@ def create_expert(body: ExpertCreate, db: Session = Depends(get_db)):
         profile_name=body.profile_name,
         status=body.status,
         feishu_visible=body.feishu_visible,
+        feishu_app_id=body.feishu_app_id or None,
+        feishu_app_secret=body.feishu_app_secret or None,
     )
     if body.skill_ids:
         e.skills = db.query(Skill).filter(Skill.id.in_(body.skill_ids)).all()
@@ -82,6 +89,15 @@ def update_expert(expert_id: int, body: ExpertUpdate, db: Session = Depends(get_
     skill_ids = data.pop("skill_ids", None)
     mcp_ids = data.pop("mcp_ids", None)
     tool_ids = data.pop("platform_tool_ids", None)
+    # 脱敏的 secret（以 * 开头）不应覆盖真实值
+    if "feishu_app_secret" in data:
+        sec = data["feishu_app_secret"] or ""
+        if sec.startswith("*"):
+            data.pop("feishu_app_secret")  # 保持原值不变
+        elif sec == "":
+            data["feishu_app_secret"] = None
+        else:
+            data["feishu_app_secret"] = sec
     for k, v in data.items():
         setattr(e, k, v)
     if skill_ids is not None:

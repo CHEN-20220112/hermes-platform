@@ -8,12 +8,15 @@
 说明：真实架构里"执行"应交给 Hermes，平台只路由。本演示用平台内置工具替代
 外部 MCP，让 Agent 闭环可真实跑通；接入真实 Hermes 时把 execute() 换成
 对 Hermes API Server 的调用即可，循环结构不变。
+
+进度回调：run_task 接受可选的 on_progress(step: dict) 回调，在每一步
+（迭代开始 / 工具调用 / 工具返回 / 最终答复）时触发，供前端/飞书实时展示。
 """
 from __future__ import annotations
 
 import json
 import time
-from typing import Any
+from typing import Any, Callable, Optional
 
 from . import platform_tools
 from .deepseek_client import chat_completions, DeepSeekError
@@ -77,8 +80,17 @@ def run_task(
     skills,
     message: str,
     settings: dict[str, str],
+    on_progress: Optional[Callable[[dict], None]] = None,
 ) -> dict:
-    """完整 Agent 循环。"""
+    """完整 Agent 循环。
+
+    on_progress(step) 在关键节点触发，step 结构：
+      {"type": "iter_start", "iteration": int}
+      {"type": "tool_call", "name": str, "args": dict}
+      {"type": "tool_result", "name": str, "result": Any}
+      {"type": "final", "response": str, "tool_calls": list, "tokens": int, "latency_ms": int}
+    回调在调用线程同步执行，实现方需自行保证不阻塞或抛异常。
+    """
     t0 = time.time()
     api_key = settings.get("deepseek_api_key", "")
     if not api_key:
@@ -86,6 +98,15 @@ def run_task(
     base_url = settings.get("deepseek_base_url", "https://api.deepseek.com/v1") or "https://api.deepseek.com/v1"
     default_model = settings.get("deepseek_default_model", "deepseek-chat") or "deepseek-chat"
     model = _resolve_model(expert.model, default_model)
+
+    def _emit(step: dict) -> None:
+        if on_progress is None:
+            return
+        try:
+            on_progress(step)
+        except Exception:  # noqa: BLE001
+            # 进度回调失败不影响主流程
+            pass
 
     system = _build_system(expert, skills)
     messages: list[dict] = [
@@ -101,6 +122,7 @@ def run_task(
 
     while iterations < MAX_ITER:
         iterations += 1
+        _emit({"type": "iter_start", "iteration": iterations, "model": model})
         resp = chat_completions(
             api_key=api_key,
             base_url=base_url,
@@ -119,8 +141,17 @@ def run_task(
 
         if not tool_calls:
             # 模型给出最终答复
+            response = (msg.get("content") or "").strip() or "（模型未返回文本）"
+            _emit({
+                "type": "final",
+                "response": response,
+                "tool_calls": tool_trace,
+                "tokens": total_tokens,
+                "latency_ms": int((time.time() - t0) * 1000),
+                "iterations": iterations,
+            })
             return {
-                "response": (msg.get("content") or "").strip() or "（模型未返回文本）",
+                "response": response,
                 "tool_calls": tool_trace,
                 "tokens": total_tokens,
                 "latency_ms": int((time.time() - t0) * 1000),
@@ -138,20 +169,31 @@ def run_task(
                 args = json.loads(raw_args) if raw_args else {}
             except json.JSONDecodeError:
                 args = {"_raw": raw_args}
+            _emit({"type": "tool_call", "name": name, "args": args})
             result = platform_tools.execute(name, args)
             tool_trace.append({
                 "name": name,
                 "args": args,
                 "result": result,
             })
+            _emit({"type": "tool_result", "name": name, "result": result})
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.get("id") or name,
                 "content": json.dumps(result, ensure_ascii=False),
             })
 
+    response = "（已达最大循环轮次，未获得最终结论。请简化任务或增加工具能力。）"
+    _emit({
+        "type": "final",
+        "response": response,
+        "tool_calls": tool_trace,
+        "tokens": total_tokens,
+        "latency_ms": int((time.time() - t0) * 1000),
+        "iterations": iterations,
+    })
     return {
-        "response": "（已达最大循环轮次，未获得最终结论。请简化任务或增加工具能力。）",
+        "response": response,
         "tool_calls": tool_trace,
         "tokens": total_tokens,
         "latency_ms": int((time.time() - t0) * 1000),
