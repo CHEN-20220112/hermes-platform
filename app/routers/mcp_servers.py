@@ -26,6 +26,29 @@ def create_mcp(body: MCPServerCreate, db: Session = Depends(get_db)):
     return srv
 
 
+@router.put("/{mcp_id}", response_model=MCPServerOut, dependencies=[Depends(require_admin)])
+def update_mcp(mcp_id: int, body: MCPServerCreate, db: Session = Depends(get_db)):
+    srv = db.get(MCPServer, mcp_id)
+    if not srv:
+        raise HTTPException(404, "MCP Server 不存在")
+    dup = db.query(MCPServer).filter(MCPServer.name == body.name, MCPServer.id != mcp_id).first()
+    if dup:
+        raise HTTPException(400, f"MCP Server '{body.name}' 已存在")
+    for k, v in body.model_dump().items():
+        setattr(srv, k, v)
+    db.commit()
+    db.refresh(srv)
+    # MCP 配置变更后，重渲染绑定了该 MCP 的专家 Profile
+    _rerender_bound_experts(db, srv)
+    return srv
+
+
+def _rerender_bound_experts(db: Session, srv: MCPServer):
+    from ..services import ProfileRenderer
+    for e in srv.experts:
+        ProfileRenderer.render(e)
+
+
 @router.delete("/{mcp_id}", dependencies=[Depends(require_admin)])
 def delete_mcp(mcp_id: int, db: Session = Depends(get_db)):
     srv = db.get(MCPServer, mcp_id)

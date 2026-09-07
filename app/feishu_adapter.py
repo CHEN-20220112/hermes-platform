@@ -85,6 +85,8 @@ def _patch_card_frame_bug():
             if pl is None:
                 return
         message_type = _MessageType(type_)
+        if message_type == _MessageType.CARD:
+            print(f"[feishu-patch] 收到 CARD 帧, msg_id={msg_id}, trace_id={trace_id}", flush=True)
         _logger.debug(self._fmt_log(
             "receive message, message_type: {}, message_id: {}, trace_id: {}, payload: {}",
             message_type.value, msg_id, trace_id, pl.decode(_UTF_8)))
@@ -310,21 +312,25 @@ class FeishuAdapter:
     def _on_card_action(self, data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
         """专家选择卡片按钮回调。"""
         self.last_event_at = dt.datetime.now().isoformat(timespec="seconds")
+        print(f"[feishu] _on_card_action 被触发", flush=True)
         try:
             action = data.event.action
             value = (action.value if action else {}) or {}
             op_open_id = data.event.operator.open_id if data.event.operator else ""
             expert_id = int(value.get("expert_id", 0))
             name = self._expert_name(expert_id)
+            print(f"[feishu] card action: expert_id={expert_id}, name={name}, open_id={op_open_id}", flush=True)
             if expert_id and name:
                 self._set_session(op_open_id, expert_id)
-                toast = {"type": "success", "content": {"tag": "plain_text", "content": f"已选择：{name}\n现在发送任务即可"}}
+                toast = {"type": "success", "content": f"已选择：{name}\n现在发送任务即可"}
             else:
-                toast = {"type": "error", "content": {"tag": "plain_text", "content": "选择失败：专家不存在"}}
+                toast = {"type": "error", "content": "选择失败：专家不存在"}
             resp = P2CardActionTriggerResponse()
             resp.toast = toast
             return resp
         except Exception as e:  # noqa: BLE001
+            import traceback
+            print(f"[feishu] _on_card_action 异常: {e}\n{traceback.format_exc()}", flush=True)
             self.error = f"卡片回调异常: {e}"
             return P2CardActionTriggerResponse()
 

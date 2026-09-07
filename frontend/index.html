@@ -305,7 +305,7 @@
   <!-- Skill 编辑弹窗 -->
   <div class="modal-mask" id="skillModal">
     <div class="modal">
-      <h3>新建 Skill</h3>
+      <h3 id="skillModalTitle">新建 Skill</h3>
       <div class="grid2">
         <div><label class="muted">名称</label><input type="text" id="skName" placeholder="sql-query"></div>
         <div><label class="muted">版本</label><input type="text" id="skVer" value="1.0.0"></div>
@@ -327,7 +327,7 @@
   <!-- MCP 编辑弹窗 -->
   <div class="modal-mask" id="mcpModal">
     <div class="modal">
-      <h3>注册 MCP Server</h3>
+      <h3 id="mcpModalTitle">注册 MCP Server</h3>
       <div class="grid2">
         <div><label class="muted">名称</label><input type="text" id="mcName" placeholder="internal-db"></div>
         <div><label class="muted">传输方式</label>
@@ -495,12 +495,28 @@ async function loadSkills(){
       <td>${s.id}</td><td><code>${esc(s.name)}</code></td><td><span class="pill">${esc(s.version)}</span></td>
       <td><span class="tag violet">${esc(s.category)}</span></td><td>${esc(s.tags||'-')}</td>
       <td class="muted">${esc(s.description||'')}</td>
-      <td><button class="btn danger sm" onclick="delSkill(${s.id})">删除</button></td>
+      <td><button class="btn sm" onclick="openSkillModal(${s.id})">编辑</button>
+          <button class="btn danger sm" onclick="delSkill(${s.id})">删除</button></td>
     </tr>`).join('')}</table>`;
 }
-function openSkillModal(){
-  ['skName','skVer','skCat','skTags','skDesc','skContent'].forEach(id=>document.getElementById(id).value='');
+function openSkillModal(id){
+  ['skName','skVer','skCat','skTags','skDesc','skContent'].forEach(x=>document.getElementById(x).value='');
   document.getElementById('skVer').value='1.0.0';
+  if(id){
+    const s = ALL_SKILLS.find(x=>x.id===id);
+    if(!s) return;
+    document.getElementById('skName').value=s.name;
+    document.getElementById('skVer').value=s.version;
+    document.getElementById('skCat').value=s.category;
+    document.getElementById('skTags').value=s.tags||'';
+    document.getElementById('skDesc').value=s.description||'';
+    document.getElementById('skContent').value=s.content||'';
+    document.getElementById('skillModalTitle').textContent='编辑 Skill #'+id;
+    document.getElementById('skillModal').dataset.editId=id;
+  } else {
+    document.getElementById('skillModalTitle').textContent='新建 Skill';
+    delete document.getElementById('skillModal').dataset.editId;
+  }
   document.getElementById('skillModal').classList.add('show');
 }
 async function saveSkill(){
@@ -508,7 +524,10 @@ async function saveSkill(){
     name: val('skName'), version: val('skVer'), category: val('skCat')||'general',
     tags: val('skTags'), description: val('skDesc'), content: val('skContent')
   };
-  try{ await api('/api/skills', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const editId = document.getElementById('skillModal').dataset.editId;
+  try{
+    if(editId) await api('/api/skills/'+editId, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    else await api('/api/skills', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     closeModal('skillModal'); loadSkills();
   } catch(e){ alert('保存失败：'+e.message); }
 }
@@ -528,12 +547,27 @@ async function loadMcp(){
       <td><span class="tag teal">${esc(m.transport)}</span></td>
       <td>${esc(m.tools_filter||'-')}</td>
       <td class="muted" style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${esc(m.config_template)}</td>
-      <td><button class="btn danger sm" onclick="delMcp(${m.id})">删除</button></td>
+      <td><button class="btn sm" onclick="openMcpModal(${m.id})">编辑</button>
+          <button class="btn danger sm" onclick="delMcp(${m.id})">删除</button></td>
     </tr>`).join('')}</table>`;
 }
-function openMcpModal(){
-  ['mcName','mcConfig','mcTools'].forEach(id=>document.getElementById(id).value='');
+function openMcpModal(id){
+  ['mcName','mcConfig','mcTools'].forEach(x=>document.getElementById(x).value='');
   document.getElementById('mcTransport').value='http';
+  if(id){
+    const m = ALL_MCP.find(x=>x.id===id);
+    if(!m) return;
+    document.getElementById('mcName').value=m.name;
+    document.getElementById('mcTransport').value=m.transport;
+    document.getElementById('mcConfig').value=m.config_template||'{}';
+    document.getElementById('mcTools').value=m.tools_filter||'';
+    document.getElementById('mcpModalTitle').textContent='编辑 MCP Server #'+id;
+    document.getElementById('mcpModal').dataset.editId=id;
+  } else {
+    document.getElementById('mcpModalTitle').textContent='注册 MCP Server';
+    delete document.getElementById('mcpModal').dataset.editId;
+  }
+  toggleMcpTemplate();
   document.getElementById('mcpModal').classList.add('show');
 }
 function toggleMcpTemplate(){
@@ -547,7 +581,10 @@ async function saveMcp(){
     name: val('mcName'), transport: val('mcTransport'),
     config_template: val('mcConfig')||'{}', tools_filter: val('mcTools')
   };
-  try{ await api('/api/mcp-servers', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const editId = document.getElementById('mcpModal').dataset.editId;
+  try{
+    if(editId) await api('/api/mcp-servers/'+editId, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    else await api('/api/mcp-servers', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     closeModal('mcpModal'); loadMcp();
   } catch(e){ alert('保存失败：'+e.message); }
 }
