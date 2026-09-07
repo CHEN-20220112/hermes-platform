@@ -19,9 +19,22 @@ import time
 from typing import Any, Callable, Optional
 
 from . import platform_tools
+from . import mcp_client
 from .deepseek_client import chat_completions, DeepSeekError
 
 MAX_ITER = 8
+
+
+def _mcp_tool_to_openai(t: dict) -> dict:
+    """把 MCP 工具（带前缀 name + input_schema）转成 OpenAI function schema。"""
+    return {
+        "type": "function",
+        "function": {
+            "name": t["name"],
+            "description": t.get("description", ""),
+            "parameters": t.get("input_schema", {"type": "object", "properties": {}}),
+        },
+    }
 
 
 def _resolve_model(expert_model: str, default_model: str) -> str:
@@ -114,15 +127,77 @@ def run_task(
         {"role": "user", "content": message},
     ]
 
-    # 暴露该专家绑定的平台工具
-    tools = [platform_tools.to_openai_tool(t) for t in expert.platform_tools if t.enabled]
+    # ---- 收集该专家绑定的工具：平台内置工具 + MCP Server 工具 ----
+    tools: list[dict] = [platform_tools.to_openai_tool(t) for t in expert.platform_tools if t.enabled]
+    # MCP 会话表：带前缀工具名 -> (session, raw_name)
+    mcp_sessions: dict[str, tuple[mcp_client.MCPSession, str]] = {}
+    try:
+        for mcp_srv in getattr(expert, "mcp_servers", []) or []:
+            try:
+                cfg = json.loads(mcp_srv.config_template or "{}")
+            except json.JSONDecodeError:
+                cfg = {}
+            try:
+                sess = mcp_client.connect(mcp_srv.name, mcp_srv.transport, cfg)
+            except Exception as e:  # noqa: BLE001
+                # 某个 MCP Server 连不上不影响整体，记到 trace 里
+                _emit({"type": "tool_call", "name": f"mcp:{mcp_srv.name}", "args": {"error": str(e)}})
+                continue
+            try:
+                mcp_tools = mcp_client.list_tools(sess, mcp_srv.tools_filter or "")
+            except Exception as e:  # noqa: BLE001
+                mcp_client.close(sess)
+                _emit({"type": "tool_call", "name": f"mcp:{mcp_srv.name}", "args": {"error": f"list_tools: {e}"}})
+                continue
+            for mt in mcp_tools:
+                tools.append(_mcp_tool_to_openai(mt))
+                mcp_sessions[mt["name"]] = (sess, mt["raw_name"])
+    except Exception:  # noqa: BLE001
+        pass
+
     tool_trace: list[dict] = []
+    total_tokens = 0
+    iterations = 0
+
+    try:
+        result = _run_loop(
+            model=model, messages=messages, tools=tools, mcp_sessions=mcp_sessions,
+            tool_trace=tool_trace, on_progress=_emit,
+            api_key=api_key, base_url=base_url, t0=t0,
+        )
+        return result
+    finally:
+        # 关闭所有 MCP 会话（子进程 / HTTP 连接）
+        closed = set()
+        for sess, _ in mcp_sessions.values():
+            if id(sess) in closed:
+                continue
+            closed.add(id(sess))
+            try:
+                mcp_client.close(sess)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _run_loop(
+    *,
+    model: str,
+    messages: list[dict],
+    tools: list[dict],
+    mcp_sessions: dict,
+    tool_trace: list[dict],
+    on_progress: Callable[[dict], None],
+    api_key: str,
+    base_url: str,
+    t0: float,
+) -> dict:
+    """Agent 主循环（抽出独立函数以便 run_task 用 try/finally 清理 MCP 会话）。"""
     total_tokens = 0
     iterations = 0
 
     while iterations < MAX_ITER:
         iterations += 1
-        _emit({"type": "iter_start", "iteration": iterations, "model": model})
+        on_progress({"type": "iter_start", "iteration": iterations, "model": model})
         resp = chat_completions(
             api_key=api_key,
             base_url=base_url,
@@ -142,7 +217,7 @@ def run_task(
         if not tool_calls:
             # 模型给出最终答复
             response = (msg.get("content") or "").strip() or "（模型未返回文本）"
-            _emit({
+            on_progress({
                 "type": "final",
                 "response": response,
                 "tool_calls": tool_trace,
@@ -169,14 +244,24 @@ def run_task(
                 args = json.loads(raw_args) if raw_args else {}
             except json.JSONDecodeError:
                 args = {"_raw": raw_args}
-            _emit({"type": "tool_call", "name": name, "args": args})
-            result = platform_tools.execute(name, args)
+            on_progress({"type": "tool_call", "name": name, "args": args})
+
+            # 分发：带前缀的是 MCP 工具，否则是平台内置工具
+            if name in mcp_sessions:
+                sess, raw_name = mcp_sessions[name]
+                try:
+                    result = mcp_client.call_tool(sess, name, args)
+                except Exception as e:  # noqa: BLE001
+                    result = {"error": f"MCP 工具调用失败: {e}"}
+            else:
+                result = platform_tools.execute(name, args)
+
             tool_trace.append({
                 "name": name,
                 "args": args,
                 "result": result,
             })
-            _emit({"type": "tool_result", "name": name, "result": result})
+            on_progress({"type": "tool_result", "name": name, "result": result})
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.get("id") or name,
@@ -184,7 +269,7 @@ def run_task(
             })
 
     response = "（已达最大循环轮次，未获得最终结论。请简化任务或增加工具能力。）"
-    _emit({
+    on_progress({
         "type": "final",
         "response": response,
         "tool_calls": tool_trace,
